@@ -17,6 +17,10 @@ class PlaybackEngine:
         self.paused: bool = False
         self.active_hand: Hand = Hand.BOTH
 
+    def set_tempo_scale(self, scale: float) -> None:
+        """Set tempo scale, clamped to [0.25, 2.0]."""
+        self.tempo_scale = max(0.25, min(2.0, scale))
+
     def update(self, dt: float, pressed_pitches: set[int]) -> list[NoteEvent]:
         """Advance playback by dt seconds. Returns notes that became active this frame."""
         if self.paused:
