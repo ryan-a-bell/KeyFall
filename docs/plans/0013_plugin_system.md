@@ -18,7 +18,29 @@ class ScoringPlugin(Protocol):
     def on_frame(self, dt: float) -> None: ...
     def get_score(self) -> int: ...
 
+class ViewPlugin(Protocol):
+    """A full-screen view contributed by a plugin. See 0015_ui_views_architecture."""
+    name: str
+    display_name: str
+    def on_enter(self, context: ViewContext) -> None: ...
+    def on_exit(self) -> None: ...
+    def handle_event(self, event: pygame.event.Event) -> ViewAction | None: ...
+    def update(self, dt: float) -> ViewAction | None: ...
+    def draw(self, surface: pygame.Surface) -> None: ...
+
+class PanelPlugin(Protocol):
+    """A panel overlay injected into an existing view. See 0015_ui_views_architecture."""
+    name: str
+    target_view: str
+    anchor: Literal["top", "bottom", "left", "right", "overlay"]
+    size: int
+    def layout(self, rect: pygame.Rect) -> None: ...
+    def handle_event(self, event: pygame.event.Event) -> None: ...
+    def update(self, dt: float) -> None: ...
+    def draw(self, surface: pygame.Surface) -> None: ...
+
 class VisualizationPlugin(Protocol):
+    """A lightweight render-only overlay (e.g. particles). For full views, use ViewPlugin."""
     name: str
     def render(self, surface: pygame.Surface, song: Song, position: float) -> None: ...
 
@@ -32,6 +54,8 @@ class PluginManager:
     def discover(self) -> None: ...
     def register(self, plugin: Any) -> None: ...
     def get_scoring_plugins(self) -> list[ScoringPlugin]: ...
+    def get_view_plugins(self) -> list[type[ViewPlugin]]: ...
+    def get_panel_plugins(self) -> list[type[PanelPlugin]]: ...
     def get_visualization_plugins(self) -> list[VisualizationPlugin]: ...
     def get_input_plugins(self) -> list[InputPlugin]: ...
 ```
@@ -46,6 +70,12 @@ Use Python's `importlib.metadata` entry points:
 # In a plugin's pyproject.toml:
 [project.entry-points."keyfall.plugins"]
 my_scoring = "my_plugin:MyScoringPlugin"
+
+[project.entry-points."keyfall.views"]
+my_view = "my_plugin.views:MyCustomView"
+
+[project.entry-points."keyfall.panels"]
+my_panel = "my_plugin.panels:MyOverlayPanel"
 ```
 
 The `PluginManager.discover()` method scans entry points at startup:
@@ -67,10 +97,21 @@ def discover(self) -> None:
 - Accuracy-only mode (no points, just percentage)
 - Time attack (race against the clock)
 
-**Visualization Plugins** — alternative or overlay renderers:
+**View Plugins** — entirely new full-screen views:
+- Rhythm game mode (DDR-style lane hits)
+- Sight-reading drill view
+- Two-player split-screen
+- See `0015_ui_views_architecture.md` for the `View` protocol.
+
+**Panel Plugins** — UI panels injected into existing views:
+- Combo counter overlay
+- Particle effects layer
+- Chord chart sidebar
+- See `0015_ui_views_architecture.md` for the `PanelPlugin` protocol.
+
+**Visualization Plugins** — lightweight render-only overlays:
 - Guitar Hero-style highway
 - Circular / radial note display
-- Particle effects layer
 - Color themes
 
 **Input Plugins** — alternative input sources:
