@@ -42,6 +42,16 @@ class ViewAction:
 
 
 @runtime_checkable
+class Panel(Protocol):
+    """A composable sub-region within a view (reusable across views)."""
+
+    def layout(self, rect: pygame.Rect) -> None: ...
+    def handle_event(self, event: pygame.event.Event) -> None: ...
+    def update(self, dt: float) -> None: ...
+    def draw(self, surface: pygame.Surface) -> None: ...
+
+
+@runtime_checkable
 class View(Protocol):
     """A full-screen game state."""
 

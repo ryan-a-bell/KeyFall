@@ -89,6 +89,32 @@ def save_settings(settings: AccessibilitySettings) -> None:
     _SETTINGS_PATH.write_text(json.dumps(data, indent=2))
 
 
+def apply_accessibility(settings: AccessibilitySettings) -> None:
+    """Apply accessibility settings to the renderer color module and config.
+
+    This modifies the global color values used by the renderers at runtime.
+    """
+    import keyfall.renderer.colors as colors
+    import keyfall.config as config
+
+    palette = settings.get_palette()
+    if settings.high_contrast:
+        palette = ColorPalette.HIGH_CONTRAST
+
+    rh, lh, bg = PALETTE_COLORS.get(palette, PALETTE_COLORS[ColorPalette.DEFAULT])
+    colors.NOTE_RIGHT_HAND = rh
+    colors.NOTE_LEFT_HAND = lh
+    colors.BG = bg
+
+    if palette == ColorPalette.HIGH_CONTRAST:
+        colors.HUD_TEXT = (255, 255, 255)
+        colors.WHITE_KEY = (255, 255, 255)
+        colors.BLACK_KEY = (0, 0, 0)
+
+    if settings.screen_reader:
+        speak("Accessibility settings applied")
+
+
 def speak(text: str) -> None:
     """Fire-and-forget TTS announcement. No-op if TTS unavailable."""
     try:

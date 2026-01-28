@@ -64,5 +64,25 @@ class ProgressTracker:
         cols = [d[0] for d in cur.description]
         return [dict(zip(cols, row)) for row in cur.fetchall()]
 
+    def get_best(self, song_title: str) -> dict | None:
+        """Return the session with the highest accuracy for a given song, or None."""
+        cur = self.conn.execute(
+            "SELECT * FROM sessions WHERE song_title = ? ORDER BY accuracy_pct DESC LIMIT 1",
+            (song_title,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None
+        cols = [d[0] for d in cur.description]
+        return dict(zip(cols, row))
+
+    def get_streak_history(self, song_title: str) -> list[int]:
+        """Return a list of max_streak values over time for a song (oldest first)."""
+        cur = self.conn.execute(
+            "SELECT max_streak FROM sessions WHERE song_title = ? ORDER BY played_at ASC",
+            (song_title,),
+        )
+        return [row[0] for row in cur.fetchall()]
+
     def close(self) -> None:
         self.conn.close()

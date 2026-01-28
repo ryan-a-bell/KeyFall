@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from importlib.metadata import entry_points
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 import pygame
 
@@ -22,7 +22,33 @@ class ScoringPlugin(Protocol):
 
 
 @runtime_checkable
+class ViewPlugin(Protocol):
+    """A full-screen view contributed by a plugin."""
+    name: str
+    display_name: str
+    def on_enter(self, context: Any) -> None: ...
+    def on_exit(self) -> None: ...
+    def handle_event(self, event: pygame.event.Event) -> Any | None: ...
+    def update(self, dt: float) -> Any | None: ...
+    def draw(self, surface: pygame.Surface) -> None: ...
+
+
+@runtime_checkable
+class PanelPlugin(Protocol):
+    """A panel overlay injected into an existing view."""
+    name: str
+    target_view: str
+    anchor: Literal["top", "bottom", "left", "right", "overlay"]
+    size: int
+    def layout(self, rect: pygame.Rect) -> None: ...
+    def handle_event(self, event: pygame.event.Event) -> None: ...
+    def update(self, dt: float) -> None: ...
+    def draw(self, surface: pygame.Surface) -> None: ...
+
+
+@runtime_checkable
 class VisualizationPlugin(Protocol):
+    """A lightweight render-only overlay (e.g. particles)."""
     name: str
     def render(self, surface: pygame.Surface, song: Song, position: float) -> None: ...
 
