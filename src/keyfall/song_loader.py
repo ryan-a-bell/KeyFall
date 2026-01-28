@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from enum import Enum, auto
 from pathlib import Path
 
 import mido
@@ -9,18 +10,56 @@ import mido
 from keyfall.models import Hand, NoteEvent, Song, TempoChange
 
 
-def load_song(file_path: str | Path) -> Song:
-    """Load a MIDI or MusicXML file and return a Song."""
+class HandSplitStrategy(Enum):
+    """Strategy for assigning notes to left/right hands."""
+    BY_TRACK = auto()    # Track 0 = right, track 1 = left (default for multi-track)
+    BY_PITCH = auto()    # Split at middle C (MIDI 60): >= 60 right, < 60 left
+    BY_CHANNEL = auto()  # Channel 0 = right, channel 1 = left (for Type 0 MIDI)
+
+
+class SongLoadError(Exception):
+    """Raised when a song file cannot be parsed."""
+
+
+def load_song(
+    file_path: str | Path,
+    hand_split: HandSplitStrategy = HandSplitStrategy.BY_TRACK,
+) -> Song:
+    """Load a MIDI or MusicXML file and return a Song.
+
+    Args:
+        file_path: Path to a .mid, .midi, .xml, .mxl, or .musicxml file.
+        hand_split: Strategy for assigning notes to hands.
+
+    Raises:
+        SongLoadError: If the file cannot be parsed.
+    """
     path = Path(file_path)
-    if path.suffix in (".mid", ".midi"):
-        return _load_midi(path)
-    elif path.suffix in (".xml", ".mxl", ".musicxml"):
-        return _load_musicxml(path)
-    else:
-        raise ValueError(f"Unsupported file format: {path.suffix}")
+    try:
+        if path.suffix in (".mid", ".midi"):
+            return _load_midi(path, hand_split)
+        elif path.suffix in (".xml", ".mxl", ".musicxml"):
+            return _load_musicxml(path)
+        else:
+            raise SongLoadError(f"Unsupported file format: {path.suffix}")
+    except SongLoadError:
+        raise
+    except Exception as exc:
+        raise SongLoadError(f"Failed to load {path.name}: {exc}") from exc
 
 
-def _load_midi(path: Path) -> Song:
+def _assign_hand(
+    pitch: int, track_idx: int, channel: int, strategy: HandSplitStrategy
+) -> Hand:
+    if strategy == HandSplitStrategy.BY_PITCH:
+        return Hand.RIGHT if pitch >= 60 else Hand.LEFT
+    elif strategy == HandSplitStrategy.BY_CHANNEL:
+        return Hand.LEFT if channel % 2 == 1 else Hand.RIGHT
+    else:  # BY_TRACK
+        return Hand.LEFT if track_idx % 2 == 1 else Hand.RIGHT
+
+
+def _load_midi(path: Path, hand_split: HandSplitStrategy = HandSplitStrategy.BY_TRACK) -> Song:
     mid = mido.MidiFile(str(path))
     song = Song(
         title=path.stem,
@@ -32,7 +71,7 @@ def _load_midi(path: Path) -> Song:
 
     for track_idx, track in enumerate(mid.tracks):
         abs_time = 0.0
-        pending: dict[int, tuple[float, int]] = {}  # pitch -> (start_time, velocity)
+        pending: dict[int, tuple[float, int, int]] = {}  # pitch -> (start_time, velocity, channel)
 
         for msg in track:
             abs_time += mido.tick2second(msg.time, mid.ticks_per_beat, tempo)
@@ -42,18 +81,31 @@ def _load_midi(path: Path) -> Song:
                 song.tempo_changes.append(TempoChange(time=abs_time, bpm=mido.tempo2bpm(tempo)))
 
             elif msg.type == "note_on" and msg.velocity > 0:
-                pending[msg.note] = (abs_time, msg.velocity)
-
-            elif msg.type in ("note_off", "note_on"):
+                # Close any existing note on the same pitch (overlapping notes)
                 if msg.note in pending:
-                    start, vel = pending.pop(msg.note)
+                    start, vel, ch = pending.pop(msg.note)
                     song.notes.append(
                         NoteEvent(
                             pitch=msg.note,
                             start_time=start,
                             duration=max(abs_time - start, 0.01),
                             velocity=vel,
-                            hand=Hand.LEFT if track_idx % 2 == 1 else Hand.RIGHT,
+                            hand=_assign_hand(msg.note, track_idx, ch, hand_split),
+                            track=track_idx,
+                        )
+                    )
+                pending[msg.note] = (abs_time, msg.velocity, getattr(msg, 'channel', 0))
+
+            elif msg.type in ("note_off", "note_on"):
+                if msg.note in pending:
+                    start, vel, ch = pending.pop(msg.note)
+                    song.notes.append(
+                        NoteEvent(
+                            pitch=msg.note,
+                            start_time=start,
+                            duration=max(abs_time - start, 0.01),
+                            velocity=vel,
+                            hand=_assign_hand(msg.note, track_idx, ch, hand_split),
                             track=track_idx,
                         )
                     )

@@ -1,8 +1,66 @@
-"""Playback engine — manages song position, wait mode, and tempo scaling."""
+"""Playback engine — manages song position, wait mode, tempo scaling, and metronome."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from keyfall.models import Hand, NoteEvent, Song
+
+
+@dataclass
+class ProgressivePractice:
+    """Auto-scaling tempo for progressive practice sessions."""
+    start_scale: float = 0.5
+    target_scale: float = 1.0
+    step: float = 0.05
+    accuracy_threshold: float = 90.0
+    current_scale: float = 0.5
+
+    def on_loop_complete(self, accuracy: float) -> float:
+        """Adjust scale based on loop accuracy. Returns the new scale."""
+        if accuracy >= self.accuracy_threshold:
+            self.current_scale = min(self.target_scale, self.current_scale + self.step)
+        else:
+            self.current_scale = max(self.start_scale, self.current_scale - self.step)
+        return self.current_scale
+
+
+class Metronome:
+    """Generates metronome click events at the current tempo."""
+
+    def __init__(self, bpm: float = 120.0, beats_per_bar: int = 4) -> None:
+        self.bpm = bpm
+        self.beats_per_bar = beats_per_bar
+        self.enabled = False
+        self._beat_counter = 0
+        self._time_since_last_beat = 0.0
+
+    def update(self, dt: float, tempo_scale: float = 1.0) -> list[tuple[int, int]]:
+        """Advance the metronome. Returns list of (midi_note, velocity) clicks to play.
+
+        Uses MIDI channel 9 convention: note 37 = side stick, note 76 = hi woodblock.
+        Beat 1 gets accent (higher velocity).
+        """
+        if not self.enabled:
+            return []
+
+        beat_duration = 60.0 / (self.bpm * tempo_scale)
+        self._time_since_last_beat += dt
+        clicks: list[tuple[int, int]] = []
+
+        while self._time_since_last_beat >= beat_duration:
+            self._time_since_last_beat -= beat_duration
+            is_downbeat = (self._beat_counter % self.beats_per_bar) == 0
+            note = 76 if is_downbeat else 37
+            velocity = 100 if is_downbeat else 70
+            clicks.append((note, velocity))
+            self._beat_counter += 1
+
+        return clicks
+
+    def reset(self) -> None:
+        self._beat_counter = 0
+        self._time_since_last_beat = 0.0
 
 
 class PlaybackEngine:
@@ -16,6 +74,10 @@ class PlaybackEngine:
         self.tempo_scale: float = 1.0
         self.paused: bool = False
         self.active_hand: Hand = Hand.BOTH
+
+    def set_tempo_scale(self, scale: float) -> None:
+        """Set tempo scale, clamped to [0.25, 2.0]."""
+        self.tempo_scale = max(0.25, min(2.0, scale))
 
     def update(self, dt: float, pressed_pitches: set[int]) -> list[NoteEvent]:
         """Advance playback by dt seconds. Returns notes that became active this frame."""
@@ -84,10 +146,10 @@ class PlaybackEngine:
 
 def split_hands(song: Song) -> tuple[Song, Song]:
     """Split a song into left-hand and right-hand parts."""
-    left = Song(title=song.title, tempo_changes=song.tempo_changes,
-                time_signatures=song.time_signatures, ticks_per_beat=song.ticks_per_beat)
-    right = Song(title=song.title, tempo_changes=song.tempo_changes,
-                 time_signatures=song.time_signatures, ticks_per_beat=song.ticks_per_beat)
+    left = Song(title=song.title, tempo_changes=list(song.tempo_changes),
+                time_signatures=list(song.time_signatures), ticks_per_beat=song.ticks_per_beat)
+    right = Song(title=song.title, tempo_changes=list(song.tempo_changes),
+                 time_signatures=list(song.time_signatures), ticks_per_beat=song.ticks_per_beat)
 
     for note in song.notes:
         if note.hand == Hand.LEFT:
@@ -103,15 +165,31 @@ def split_hands(song: Song) -> tuple[Song, Song]:
     return left, right
 
 
-def select_section(song: Song, start_bar: int, end_bar: int, beats_per_bar: float = 4.0) -> Song:
-    """Extract a section of the song by bar numbers (1-indexed)."""
-    start_time = (start_bar - 1) * beats_per_bar
-    end_time = end_bar * beats_per_bar
+def _beats_to_seconds(beats: float, bpm: float) -> float:
+    """Convert beat count to seconds at given BPM."""
+    return beats * 60.0 / bpm
+
+
+def select_section(
+    song: Song,
+    start_bar: int,
+    end_bar: int,
+    beats_per_bar: float = 4.0,
+    bpm: float | None = None,
+) -> Song:
+    """Extract a section of the song by bar numbers (1-indexed).
+
+    If bpm is None, the first tempo change is used (defaults to 120).
+    """
+    if bpm is None:
+        bpm = song.tempo_changes[0].bpm if song.tempo_changes else 120.0
+    start_time = _beats_to_seconds((start_bar - 1) * beats_per_bar, bpm)
+    end_time = _beats_to_seconds(end_bar * beats_per_bar, bpm)
 
     section = Song(
         title=f"{song.title} (bars {start_bar}-{end_bar})",
-        tempo_changes=song.tempo_changes,
-        time_signatures=song.time_signatures,
+        tempo_changes=list(song.tempo_changes),
+        time_signatures=list(song.time_signatures),
         ticks_per_beat=song.ticks_per_beat,
     )
 

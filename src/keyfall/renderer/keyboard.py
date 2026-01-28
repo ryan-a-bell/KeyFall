@@ -31,7 +31,10 @@ def key_x_position(pitch: int) -> float:
             white_idx += 1
 
     if is_black_key(pitch):
-        return white_idx * white_w - white_w * 0.15
+        # Match render loop: bx = wx - bw/2 - white_w*0.15, center = bx + bw/2
+        bw = white_w * 0.6
+        bx = white_idx * white_w - bw / 2 - white_w * 0.15
+        return bx + bw / 2
     return white_idx * white_w + white_w / 2
 
 
