@@ -137,3 +137,17 @@ Analysis of piano learning apps and open-source alternatives, focused on how Key
 11. **MIDI and MusicXML import** — Synthesia supports MIDI import. Most subscription apps lock users into their curated song libraries. KeyFall supports both MIDI and MusicXML, meaning any score from MuseScore, IMSLP, or a student's own compositions can be loaded immediately.
 
 12. **Community-driven content** — With a plugin system and open file format support, the community can share song packs, custom game modes, and scoring algorithms. No competitor has this — their content is gated behind subscriptions and editorial curation.
+
+### AI differentiators
+
+13. **Adaptive difficulty engine** — Track per-pitch and per-interval error rates in real time and automatically adjust tempo, hand isolation, and section looping to keep the player in the optimal learning zone. No competitor adjusts difficulty dynamically — they all use static easy/medium/hard levels.
+
+14. **Practice plan generation** — Analyze the player's progress history to generate structured multi-session practice plans: which sections to drill, what tempo to start at, when to combine hands, when to move on. This is what a human teacher does between lessons that no app replicates.
+
+15. **Real-time technique feedback** — Go beyond hit/miss grading to detect *why* a player is struggling: timing drift per hand, dynamic mismatches (too loud in piano passages), uneven finger velocity in runs, and articulation errors (staccato played as legato). No competitor provides technique-level coaching.
+
+16. **Intelligent fingering suggestion** — Given a passage and the player's hand span (calibrated from MIDI keyboard reach), suggest optimal fingerings using dynamic programming that minimizes repositioning and avoids ergonomically awkward transitions. Current apps show either published fingerings or nothing.
+
+17. **Audio-based assessment** — Use polyphonic pitch detection to evaluate playing from a microphone, removing the MIDI keyboard requirement entirely. Simply Piano and Flowkey offer basic mic recognition but it's widely reported as unreliable. A modern detection model can do onset, pitch, and velocity estimation accurately enough to grade acoustic piano playing.
+
+18. **Sight-reading difficulty estimation** — Automatically score any imported MIDI/MusicXML file on a 1-18 difficulty scale by analyzing note density, hand independence, interval complexity, rhythmic patterns, tempo, and key signatures. No app auto-rates arbitrary files — Piano Marvel has curated ratings only for its own library.
