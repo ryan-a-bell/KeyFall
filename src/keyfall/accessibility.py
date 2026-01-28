@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from enum import Enum, auto
 from pathlib import Path
 
@@ -95,7 +95,6 @@ def apply_accessibility(settings: AccessibilitySettings) -> None:
     This modifies the global color values used by the renderers at runtime.
     """
     import keyfall.renderer.colors as colors
-    import keyfall.config as config
 
     palette = settings.get_palette()
     if settings.high_contrast:

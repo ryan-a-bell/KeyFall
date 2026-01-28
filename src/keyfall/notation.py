@@ -24,6 +24,15 @@ _CURSOR_X_RATIO = 0.3  # cursor position as fraction of width
 # C D E F G A B diatonic offsets from C within octave
 _DIATONIC_OFFSETS = {0: 0, 2: 1, 4: 2, 5: 3, 7: 4, 9: 5, 11: 6}
 
+_accidental_font: pygame.font.Font | None = None
+
+
+def _get_accidental_font() -> pygame.font.Font:
+    global _accidental_font
+    if _accidental_font is None:
+        _accidental_font = pygame.font.SysFont("monospace", 12)
+    return _accidental_font
+
 
 def _pitch_to_staff_position(pitch: int) -> int:
     """Convert MIDI pitch to diatonic staff position relative to middle C (0).
@@ -160,7 +169,7 @@ def render_notation(
 
         # Accidental
         if _is_accidental(note.pitch):
-            font = pygame.font.SysFont("monospace", 12)
+            font = _get_accidental_font()
             sharp_surf = font.render("#", True, color)
             surface.blit(sharp_surf, (note_x - radius - 10, int(note_y) - 6))
 

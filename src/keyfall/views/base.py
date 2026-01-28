@@ -11,7 +11,7 @@ from keyfall.models import Hand, Song
 
 if TYPE_CHECKING:
     from keyfall.audio import AudioEngine
-    from keyfall.midi_input import MidiInput
+    from keyfall.midi_input import KeyboardInput, MidiInput
     from keyfall.plugins.manager import PluginManager
     from keyfall.progress import ProgressTracker
 
@@ -25,6 +25,7 @@ class ViewContext:
     audio: AudioEngine | None
     progress: ProgressTracker | None
     plugin_manager: PluginManager | None = None
+    keyboard_input: KeyboardInput | None = None
     song: Song | None = None
     section: tuple[int, int] | None = None
     hand: Hand = Hand.BOTH
@@ -70,7 +71,7 @@ class ViewManager:
 
     def __init__(self, context: ViewContext) -> None:
         self._registry: dict[str, type] = {}
-        self._stack: list[View] = []
+        self._stack: list[tuple[View, ViewContext]] = []
         self._context = context
 
     def register(self, view_cls: type) -> None:
@@ -82,26 +83,27 @@ class ViewManager:
 
     def push(self, view_name: str, **context_overrides: Any) -> None:
         if self._stack:
-            self._stack[-1].on_exit()
+            self._stack[-1][0].on_exit()
         view = self._registry[view_name]()
         ctx = self._patched_context(context_overrides)
         view.on_enter(ctx)
-        self._stack.append(view)
+        self._stack.append((view, ctx))
 
     def pop(self) -> None:
         if self._stack:
-            self._stack.pop().on_exit()
+            self._stack.pop()[0].on_exit()
         if self._stack:
-            self._stack[-1].on_enter(self._context)
+            view, ctx = self._stack[-1]
+            view.on_enter(ctx)
 
     def switch(self, view_name: str, **context_overrides: Any) -> None:
         if self._stack:
-            self._stack.pop().on_exit()
+            self._stack.pop()[0].on_exit()
         self.push(view_name, **context_overrides)
 
     @property
     def active_view(self) -> View | None:
-        return self._stack[-1] if self._stack else None
+        return self._stack[-1][0] if self._stack else None
 
     def handle_event(self, event: pygame.event.Event) -> bool:
         if (view := self.active_view) is None:
@@ -141,6 +143,7 @@ class ViewManager:
             audio=self._context.audio,
             progress=self._context.progress,
             plugin_manager=self._context.plugin_manager,
+            keyboard_input=self._context.keyboard_input,
             song=self._context.song,
             section=self._context.section,
             hand=self._context.hand,

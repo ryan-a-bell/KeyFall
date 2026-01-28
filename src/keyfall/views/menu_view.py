@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pygame
 
-from keyfall.renderer.colors import BG, HUD_TEXT, NOTE_PERFECT, NOTE_RIGHT_HAND
+from keyfall.renderer import colors as colors_mod
 from keyfall.song_loader import load_song
 from keyfall.views.base import ViewAction, ViewContext
 
@@ -89,28 +89,28 @@ class MenuView:
         if not self._font or not self._title_font:
             return
 
-        surface.fill(BG)
+        surface.fill(colors_mod.BG)
         w, h = surface.get_size()
 
         # Title
-        title = self._title_font.render("KeyFall", True, NOTE_PERFECT)
+        title = self._title_font.render("KeyFall", True, colors_mod.NOTE_PERFECT)
         surface.blit(title, (w // 2 - title.get_width() // 2, 30))
 
         # Mode selector
         mode_text = self._font.render(
-            f"Mode: < {self._modes[self._mode]} >  (Tab to cycle)", True, NOTE_RIGHT_HAND
+            f"Mode: < {self._modes[self._mode]} >  (Tab to cycle)", True, colors_mod.NOTE_RIGHT_HAND
         )
         surface.blit(mode_text, (40, 90))
 
         # Song list
         if self._song_files:
-            header = self._font.render("Songs:", True, HUD_TEXT)
+            header = self._font.render("Songs:", True, colors_mod.HUD_TEXT)
             surface.blit(header, (40, 140))
 
             y = 175
             for i, path in enumerate(self._song_files):
                 prefix = "> " if i == self._selected else "  "
-                color = NOTE_PERFECT if i == self._selected else HUD_TEXT
+                color = colors_mod.NOTE_PERFECT if i == self._selected else colors_mod.HUD_TEXT
                 text = self._font.render(f"{prefix}{path.stem}", True, color)
                 surface.blit(text, (40, y))
                 y += 28

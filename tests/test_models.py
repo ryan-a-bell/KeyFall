@@ -17,11 +17,15 @@ def test_split_hands():
 
 
 def test_select_section():
-    song = Song(notes=[
-        NoteEvent(pitch=60, start_time=0.0, duration=1.0),
-        NoteEvent(pitch=62, start_time=4.0, duration=1.0),
-        NoteEvent(pitch=64, start_time=8.0, duration=1.0),
-    ])
+    from keyfall.models import TempoChange
+    song = Song(
+        notes=[
+            NoteEvent(pitch=60, start_time=0.0, duration=1.0),
+            NoteEvent(pitch=62, start_time=4.0, duration=1.0),
+            NoteEvent(pitch=64, start_time=8.0, duration=1.0),
+        ],
+        tempo_changes=[TempoChange(time=0.0, bpm=60.0)],
+    )
     section = select_section(song, start_bar=2, end_bar=2)
     assert len(section.notes) == 1
     assert section.notes[0].pitch == 62

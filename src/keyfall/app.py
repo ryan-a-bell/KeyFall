@@ -5,6 +5,7 @@ from __future__ import annotations
 import pygame
 
 from keyfall.config import FPS, WINDOW_HEIGHT, WINDOW_TITLE, WINDOW_WIDTH
+from keyfall.midi_input import KeyboardInput
 from keyfall.views.base import ViewContext, ViewManager
 from keyfall.views.freeplay_view import FreePlayView
 from keyfall.views.menu_view import MenuView
@@ -24,6 +25,7 @@ class App:
         audio = self._try_audio()
         progress = self._try_progress()
         plugin_manager = self._try_plugins()
+        self._keyboard_input = KeyboardInput()
 
         context = ViewContext(
             screen_size=(WINDOW_WIDTH, WINDOW_HEIGHT),
@@ -31,6 +33,7 @@ class App:
             audio=audio,
             progress=progress,
             plugin_manager=plugin_manager,
+            keyboard_input=self._keyboard_input,
             songs_dir=songs_dir,
         )
 
@@ -58,6 +61,7 @@ class App:
                 if event.type == pygame.QUIT:
                     running = False
                 else:
+                    self._keyboard_input.feed_event(event)
                     if not self.views.handle_event(event):
                         running = False
             if running:

@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import time
-
 import pygame
 
 from keyfall.evaluator import evaluate_hit
 from keyfall.models import Hand, HitGrade, NoteEvent, SessionStats, Song
 from keyfall.playback import PlaybackEngine
-from keyfall.renderer.colors import BG, HUD_TEXT, NOTE_LEFT_HAND, NOTE_RIGHT_HAND
+from keyfall.renderer import colors as colors_mod
 from keyfall.renderer.hud import render_hud
 from keyfall.renderer.keyboard import render_keyboard
 from keyfall.renderer.waterfall import render_waterfall
@@ -28,7 +26,6 @@ class WaterfallView:
         self._streak: int = 0
         self._pending_notes: list[NoteEvent] = []
         self._font: pygame.font.Font | None = None
-        self._start_time: float = 0.0
 
     def on_enter(self, context: ViewContext) -> None:
         self._context = context
@@ -39,14 +36,10 @@ class WaterfallView:
         self._engine = PlaybackEngine(song)
         self._engine.set_tempo_scale(context.tempo_scale)
         self._engine.active_hand = context.hand
-        self._stats = SessionStats(
-            song_title=song.title,
-            total_notes=len(song.notes),
-        )
+        self._stats = SessionStats(song_title=song.title)
         self._streak = 0
         self._pressed = set()
         self._pending_notes = []
-        self._start_time = time.time()
 
     def on_exit(self) -> None:
         if self._context and self._context.audio:
@@ -92,20 +85,23 @@ class WaterfallView:
         if engine is None:
             return None
 
-        # Poll MIDI input
-        if self._context and self._context.midi_input:
-            while True:
-                evt = self._context.midi_input.poll()
-                if evt is None:
-                    break
-                if evt.is_note_on:
-                    self._pressed.add(evt.pitch)
-                    if self._context.audio:
-                        self._context.audio.note_on(evt.pitch, evt.velocity)
-                else:
-                    self._pressed.discard(evt.pitch)
-                    if self._context.audio:
-                        self._context.audio.note_off(evt.pitch)
+        # Poll MIDI and keyboard input
+        if self._context:
+            for source in (self._context.midi_input, self._context.keyboard_input):
+                if source is None:
+                    continue
+                while True:
+                    evt = source.poll()
+                    if evt is None:
+                        break
+                    if evt.is_note_on:
+                        self._pressed.add(evt.pitch)
+                        if self._context.audio:
+                            self._context.audio.note_on(evt.pitch, evt.velocity)
+                    else:
+                        self._pressed.discard(evt.pitch)
+                        if self._context.audio:
+                            self._context.audio.note_off(evt.pitch)
 
         # Advance playback
         newly_active = engine.update(dt, self._pressed)
@@ -156,6 +152,7 @@ class WaterfallView:
     def _update_accuracy(self) -> None:
         hit = self._stats.perfect + self._stats.good + self._stats.ok
         total = hit + self._stats.missed
+        self._stats.total_notes = total
         self._stats.accuracy_pct = (hit / total * 100.0) if total > 0 else 0.0
 
     def draw(self, surface: pygame.Surface) -> None:
@@ -163,7 +160,7 @@ class WaterfallView:
         if engine is None:
             return
 
-        surface.fill(BG)
+        surface.fill(colors_mod.BG)
 
         render_waterfall(surface, engine.song, engine.position)
         render_keyboard(surface, self._pressed)
@@ -180,5 +177,5 @@ class WaterfallView:
             if engine.paused:
                 info_parts.append("PAUSED")
             info_text = " | ".join(info_parts)
-            rendered = self._font.render(info_text, True, HUD_TEXT)
+            rendered = self._font.render(info_text, True, colors_mod.HUD_TEXT)
             surface.blit(rendered, (w - rendered.get_width() - 10, 10))

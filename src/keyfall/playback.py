@@ -146,10 +146,10 @@ class PlaybackEngine:
 
 def split_hands(song: Song) -> tuple[Song, Song]:
     """Split a song into left-hand and right-hand parts."""
-    left = Song(title=song.title, tempo_changes=song.tempo_changes,
-                time_signatures=song.time_signatures, ticks_per_beat=song.ticks_per_beat)
-    right = Song(title=song.title, tempo_changes=song.tempo_changes,
-                 time_signatures=song.time_signatures, ticks_per_beat=song.ticks_per_beat)
+    left = Song(title=song.title, tempo_changes=list(song.tempo_changes),
+                time_signatures=list(song.time_signatures), ticks_per_beat=song.ticks_per_beat)
+    right = Song(title=song.title, tempo_changes=list(song.tempo_changes),
+                 time_signatures=list(song.time_signatures), ticks_per_beat=song.ticks_per_beat)
 
     for note in song.notes:
         if note.hand == Hand.LEFT:
@@ -165,15 +165,31 @@ def split_hands(song: Song) -> tuple[Song, Song]:
     return left, right
 
 
-def select_section(song: Song, start_bar: int, end_bar: int, beats_per_bar: float = 4.0) -> Song:
-    """Extract a section of the song by bar numbers (1-indexed)."""
-    start_time = (start_bar - 1) * beats_per_bar
-    end_time = end_bar * beats_per_bar
+def _beats_to_seconds(beats: float, bpm: float) -> float:
+    """Convert beat count to seconds at given BPM."""
+    return beats * 60.0 / bpm
+
+
+def select_section(
+    song: Song,
+    start_bar: int,
+    end_bar: int,
+    beats_per_bar: float = 4.0,
+    bpm: float | None = None,
+) -> Song:
+    """Extract a section of the song by bar numbers (1-indexed).
+
+    If bpm is None, the first tempo change is used (defaults to 120).
+    """
+    if bpm is None:
+        bpm = song.tempo_changes[0].bpm if song.tempo_changes else 120.0
+    start_time = _beats_to_seconds((start_bar - 1) * beats_per_bar, bpm)
+    end_time = _beats_to_seconds(end_bar * beats_per_bar, bpm)
 
     section = Song(
         title=f"{song.title} (bars {start_bar}-{end_bar})",
-        tempo_changes=song.tempo_changes,
-        time_signatures=song.time_signatures,
+        tempo_changes=list(song.tempo_changes),
+        time_signatures=list(song.time_signatures),
         ticks_per_beat=song.ticks_per_beat,
     )
 
