@@ -106,18 +106,34 @@ Analysis of piano learning apps and open-source alternatives, focused on how Key
 
 ## KeyFall Differentiation Opportunities
 
-**No competitor does real piano synthesis well.** Every app either plays back raw MIDI samples or relies entirely on the user's own instrument for sound. This is KeyFall's primary opening.
+**No competitor does real piano synthesis well.** Every app either plays back raw MIDI samples or relies entirely on the user's own instrument for sound. This is KeyFall's primary opening — but synthesis is only one of several structural advantages.
 
-Specific gaps to exploit:
+### Core differentiators
 
-1. **Synthesis quality** — All competitors use basic SoundFont/sample playback with no physical modeling. KeyFall's planned improvements (sympathetic resonance, half-pedaling, release samples, velocity-curve timbral morphing, soundboard convolution, adaptive latency) are features found only in professional virtual instruments costing $100-400, not in any learning app.
+1. **Pure Python** — The entire engine is Python 3.11+. Every competitor is either closed-source or written in a systems language (Neothesia is Rust, PianoBooster is C++). Python lowers the contribution barrier dramatically — music teachers, students, and hobbyist developers can read, modify, and extend KeyFall without learning a compiled language. The Python ecosystem (numpy, scipy, music21, mido, pygame) gives access to world-class scientific computing and music analysis libraries with minimal glue code.
 
-2. **Open source** — Synthesia is closed-source with a one-time fee. Simply Piano, Flowkey, and others are subscription SaaS. The only active OSS competitor is Neothesia (Rust), which has no audio synthesis, pedagogy, or evaluation. KeyFall can be the open-source piano learning engine that others build on.
+2. **Plugin system** — No competitor offers any extensibility. KeyFall's planned plugin architecture (scoring, visualization, input, and view plugins via Python entry points) means the community can build custom game modes, grading systems, notation styles, and input methods without forking the project. This turns KeyFall from a single app into a platform.
 
-3. **Extensibility** — No competitor offers a plugin system. KeyFall's planned plugin architecture (scoring, visualization, input, and view plugins) enables community-driven game modes and teaching methods.
+3. **Open source (Apache 2.0)** — Synthesia is closed-source. Simply Piano, Flowkey, Skoove, Playground Sessions, and Yousician are proprietary SaaS. The only active OSS competitor is Neothesia, which has no audio synthesis, pedagogy, or evaluation system. KeyFall is the only open-source project combining a falling-note engine, hit evaluation, progress tracking, and audio synthesis — and its permissive license means it can be embedded in commercial products, forked by schools, or adopted by researchers.
 
-4. **Latency** — Competitors accept default audio backend latency (40-50ms). KeyFall's adaptive latency engine with predictive voice pre-allocation targets <10ms on capable hardware.
+4. **Free, no subscription** — Subscription fatigue is real. Competitors charge $100-150/year. Synthesia proved one-time pricing works at $39. KeyFall being completely free removes the last barrier for students worldwide, especially in regions where $100/year is prohibitive.
 
-5. **Expressive technique** — No app supports half-pedaling, key-off velocity, or continuous dynamics. Advanced students have no tool that rewards expressive playing.
+### Technical differentiators
 
-6. **One-time cost / free** — Subscription fatigue is real. Synthesia proved one-time pricing works. KeyFall being free and open-source is the strongest value proposition possible.
+5. **Synthesis quality** — All competitors use basic SoundFont/sample playback with no physical modeling. KeyFall's planned improvements (sympathetic resonance, half-pedaling, release samples, velocity-curve timbral morphing, soundboard convolution, adaptive latency) are features found only in professional virtual instruments costing $100-400, not in any learning app.
+
+6. **Expressive technique** — No app supports half-pedaling, key-off velocity, or continuous dynamics. Advanced students have no tool that rewards expressive playing. KeyFall can be the first learning tool that teaches musicality, not just note accuracy.
+
+7. **Latency** — Competitors accept default audio backend latency (40-50ms). KeyFall's adaptive latency engine with predictive voice pre-allocation targets <10ms on capable hardware.
+
+8. **Modular architecture** — Each subsystem (song loading, rendering, evaluation, audio, input, progress) is a standalone module with clean interfaces. This makes it viable as a library — embed just the evaluator in a teaching app, or just the renderer in a music visualizer. No competitor is designed for reuse.
+
+### Ecosystem differentiators
+
+9. **Cross-platform from day one** — Python + pygame runs on Linux, macOS, and Windows without platform-specific builds. Competitors either skip Linux entirely (Piano Marvel, Playground Sessions) or treat it as an afterthought.
+
+10. **Hackable for education and research** — Music education researchers can instrument KeyFall to collect practice data, test pedagogical hypotheses, or prototype new teaching methods. No commercial app exposes this level of access. A university could fork KeyFall for a piano lab; a PhD student could add an adaptive difficulty plugin; a teacher could write a custom scoring plugin that rewards sight-reading over memorization.
+
+11. **MIDI and MusicXML import** — Synthesia supports MIDI import. Most subscription apps lock users into their curated song libraries. KeyFall supports both MIDI and MusicXML, meaning any score from MuseScore, IMSLP, or a student's own compositions can be loaded immediately.
+
+12. **Community-driven content** — With a plugin system and open file format support, the community can share song packs, custom game modes, and scoring algorithms. No competitor has this — their content is gated behind subscriptions and editorial curation.
