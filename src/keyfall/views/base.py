@@ -31,6 +31,7 @@ class ViewContext:
     hand: Hand = Hand.BOTH
     tempo_scale: float = 1.0
     songs_dir: str = ""
+    audio_status: str = ""
 
 
 @dataclass
@@ -149,6 +150,7 @@ class ViewManager:
             hand=self._context.hand,
             tempo_scale=self._context.tempo_scale,
             songs_dir=self._context.songs_dir,
+            audio_status=self._context.audio_status,
         )
         for key, val in overrides.items():
             if hasattr(ctx, key):

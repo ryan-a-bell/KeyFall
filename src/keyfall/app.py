@@ -14,7 +14,7 @@ from keyfall.views.waterfall_view import WaterfallView
 
 
 class App:
-    def __init__(self, songs_dir: str = "") -> None:
+    def __init__(self, songs_dir: str = "", soundfont: str | None = None) -> None:
         pygame.init()
         self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
         pygame.display.set_caption(WINDOW_TITLE)
@@ -22,7 +22,7 @@ class App:
 
         # Build shared context — optional subsystems gracefully degrade
         midi_input = self._try_midi()
-        audio = self._try_audio()
+        audio, audio_status = self._try_audio(soundfont)
         progress = self._try_progress()
         plugin_manager = self._try_plugins()
         self._keyboard_input = KeyboardInput()
@@ -35,6 +35,7 @@ class App:
             plugin_manager=plugin_manager,
             keyboard_input=self._keyboard_input,
             songs_dir=songs_dir,
+            audio_status=audio_status,
         )
 
         self.views = ViewManager(context)
@@ -88,12 +89,17 @@ class App:
             return None
 
     @staticmethod
-    def _try_audio():
+    def _try_audio(soundfont: str | None = None):
+        """Return (AudioEngine or None, human-readable status for the menu)."""
         try:
+            from keyfall.soundfont import find_soundfont
+            path = find_soundfont(soundfont)
+            if path is None:
+                return None, "Sound: off (no SoundFont; run `keyfall --download-soundfont`)"
             from keyfall.audio import AudioEngine
-            return AudioEngine()
-        except Exception:
-            return None
+            return AudioEngine(path), f"Sound: {path.name}"
+        except Exception as exc:
+            return None, f"Sound: off ({exc})"
 
     @staticmethod
     def _try_progress():

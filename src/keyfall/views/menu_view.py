@@ -7,7 +7,7 @@ from pathlib import Path
 import pygame
 
 from keyfall.renderer import colors as colors_mod
-from keyfall.song_loader import load_song
+from keyfall.song_loader import HandSplitStrategy, load_song
 from keyfall.views.base import ViewAction, ViewContext
 
 
@@ -22,6 +22,9 @@ class MenuView:
         self._mode: int = 0  # 0=Play, 1=Practice, 2=Free Play
         self._modes = ["Play", "Practice", "Free Play"]
         self._mode_targets = ["waterfall", "practice", "freeplay"]
+        self._hand_splits = list(HandSplitStrategy)
+        self._hand_split: int = 0  # AUTO
+        self._error: str = ""
         self._font: pygame.font.Font | None = None
         self._title_font: pygame.font.Font | None = None
 
@@ -40,7 +43,7 @@ class MenuView:
             return
         songs_path = Path(self._context.songs_dir)
         if songs_path.is_dir():
-            for ext in ("*.mid", "*.midi", "*.musicxml", "*.xml"):
+            for ext in ("*.mid", "*.midi", "*.musicxml", "*.xml", "*.mxl"):
                 self._song_files.extend(sorted(songs_path.glob(ext)))
 
     def handle_event(self, event: pygame.event.Event) -> ViewAction | None:
@@ -56,6 +59,8 @@ class MenuView:
             self._selected = min(len(self._song_files) - 1, self._selected + 1) if self._song_files else 0
         elif event.key == pygame.K_TAB:
             self._mode = (self._mode + 1) % len(self._modes)
+        elif event.key == pygame.K_h:
+            self._hand_split = (self._hand_split + 1) % len(self._hand_splits)
         elif event.key == pygame.K_RETURN:
             return self._launch()
 
@@ -72,9 +77,11 @@ class MenuView:
 
         song_path = self._song_files[self._selected]
         try:
-            song = load_song(str(song_path))
-        except Exception:
+            song = load_song(str(song_path), self._hand_splits[self._hand_split])
+        except Exception as exc:
+            self._error = str(exc)
             return None
+        self._error = ""
 
         return ViewAction(
             kind="switch",
@@ -102,12 +109,25 @@ class MenuView:
         )
         surface.blit(mode_text, (40, 90))
 
+        split_name = self._hand_splits[self._hand_split].name.replace("_", " ").title()
+        split_text = self._font.render(
+            f"Hands: < {split_name} >  (H to cycle)", True, colors_mod.NOTE_LEFT_HAND
+        )
+        surface.blit(split_text, (520, 90))
+
+        if self._context and self._context.audio_status:
+            ok = not self._context.audio_status.startswith("Sound: off")
+            status = self._font.render(
+                self._context.audio_status, True, colors_mod.NOTE_PERFECT if ok else (180, 80, 80)
+            )
+            surface.blit(status, (40, 120))
+
         # Song list
         if self._song_files:
             header = self._font.render("Songs:", True, colors_mod.HUD_TEXT)
-            surface.blit(header, (40, 140))
+            surface.blit(header, (40, 160))
 
-            y = 175
+            y = 195
             for i, path in enumerate(self._song_files):
                 prefix = "> " if i == self._selected else "  "
                 color = colors_mod.NOTE_PERFECT if i == self._selected else colors_mod.HUD_TEXT
@@ -118,8 +138,15 @@ class MenuView:
                     break
         else:
             no_songs = self._font.render("No songs found. Set songs_dir in config.", True, (180, 80, 80))
-            surface.blit(no_songs, (40, 160))
+            surface.blit(no_songs, (40, 180))
+
+        if self._error:
+            err = self._font.render(self._error, True, (220, 80, 80))
+            surface.blit(err, (40, h - 70))
 
         # Controls legend
-        legend = self._font.render("Up/Down: select | Enter: launch | Tab: mode | Esc: quit", True, (120, 120, 140))
+        legend = self._font.render(
+            "Up/Down: select | Enter: launch | Tab: mode | H: hands | Esc: quit",
+            True, (120, 120, 140),
+        )
         surface.blit(legend, (40, h - 40))

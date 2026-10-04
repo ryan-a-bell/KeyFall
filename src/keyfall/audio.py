@@ -11,15 +11,15 @@ import fluidsynth
 from keyfall.models import NoteEvent
 
 
-def _detect_audio_driver() -> str:
-    """Auto-detect the appropriate FluidSynth audio driver for the platform."""
+def _audio_drivers() -> list[str]:
+    """FluidSynth audio drivers to try for this platform, most preferred first."""
     if sys.platform == "linux":
-        return "pulseaudio"
+        return ["pulseaudio", "pipewire", "alsa"]
     elif sys.platform == "darwin":
-        return "coreaudio"
+        return ["coreaudio"]
     elif sys.platform == "win32":
-        return "dsound"
-    return "alsa"
+        return ["wasapi", "dsound"]
+    return ["alsa"]
 
 
 class AudioEngine:
@@ -27,14 +27,25 @@ class AudioEngine:
 
     def __init__(self, soundfont_path: str | Path | None = None) -> None:
         self.fs = fluidsynth.Synth(gain=0.8)
-        self.fs.start(driver=_detect_audio_driver())
+        for driver in _audio_drivers():
+            self.fs.start(driver=driver)
+            if self.fs.audio_driver:
+                break
+        else:
+            self.fs.delete()
+            raise RuntimeError("No working audio output driver found")
         self._sfid: int | None = None
+        self.soundfont_path: Path | None = None
         self._pending_offs: list[tuple[float, int, int]] = []  # (off_time, pitch, channel)
         if soundfont_path:
             self.load_soundfont(soundfont_path)
 
     def load_soundfont(self, path: str | Path) -> None:
-        self._sfid = self.fs.sfload(str(path))
+        sfid = self.fs.sfload(str(path))
+        if sfid < 0:
+            raise RuntimeError(f"Could not load SoundFont: {path}")
+        self._sfid = sfid
+        self.soundfont_path = Path(path)
         self.fs.program_select(0, self._sfid, 0, 0)
 
     def note_on(self, pitch: int, velocity: int = 80, channel: int = 0) -> None:
