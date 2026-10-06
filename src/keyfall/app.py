@@ -112,25 +112,30 @@ class App:
 
     @staticmethod
     def _try_audio(soundfont: str | None = None):
-        """Return (AudioEngine or None, human-readable status for the menu)."""
+        """Return (AudioEngine or None, status text for the menu).
+
+        The engine starts even without a SoundFont so one downloaded from
+        Settings can be loaded into it while the game is running.
+        """
         try:
-            from keyfall.soundfont import find_gm_soundfont, find_soundfont
-            path = find_soundfont(soundfont)
-            if path is None:
-                return None, "Sound: off (no SoundFont; run `keyfall --download-soundfont`)"
             from keyfall.audio import AudioEngine
-            engine = AudioEngine(path)
-            status = f"Sound: {path.name}"
-            gm = find_gm_soundfont(exclude=path)
-            if gm is not None:
-                try:
-                    engine.load_gm_soundfont(gm)
-                    status += f" + {gm.name}"
-                except RuntimeError:
-                    pass
-            return engine, status
+            from keyfall.soundfont import find_gm_soundfont, find_soundfont
+            engine = AudioEngine()
         except Exception as exc:
             return None, f"Sound: off ({exc})"
+        path = find_soundfont(soundfont)
+        if path is not None:
+            try:
+                engine.load_soundfont(path)
+            except RuntimeError:
+                path = None
+        gm = find_gm_soundfont(exclude=path)
+        if gm is not None:
+            try:
+                engine.load_gm_soundfont(gm)
+            except RuntimeError:
+                pass
+        return engine, engine.status_text()
 
     @staticmethod
     def _load_ui(theme: str | None) -> UIState:

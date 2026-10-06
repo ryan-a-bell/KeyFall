@@ -96,6 +96,8 @@ class SettingsRow:
     description: str
     adjustable: bool = True  # False for action rows like "Done"
     swatch: str = ""  # optional color key for the value: right, left, both, backing, off
+    button: bool = False  # draw the value as a button (actions like Download)
+    progress: float | None = None  # 0..1 shows a progress bar (e.g. downloading)
 
 
 @dataclass

@@ -146,13 +146,17 @@ class MenuView:
 
     def update(self, dt: float) -> ViewAction | None:
         self._clock += dt
+        ctx = self._context
+        if ctx is not None and ctx.ui is not None:
+            ctx.ui.apply_downloads(ctx.audio)  # a download may finish after leaving Settings
         return None
 
     def draw(self, surface: pygame.Surface) -> None:
         ctx = self._context
         if ctx is None:
             return
-        status = ctx.audio_status or "Sound: off"
+        status = ctx.audio.status_text() if hasattr(ctx.audio, "status_text") else (
+            ctx.audio_status or "Sound: off")
         midi = ctx.midi_input
         midi_ok = bool(getattr(midi, "connected", midi is not None))
         midi_name = getattr(midi, "port_name", None) or "Connected"

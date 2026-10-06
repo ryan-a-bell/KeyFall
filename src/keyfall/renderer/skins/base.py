@@ -190,9 +190,33 @@ class Skin:
         label = row.label
         while len(label) > 4 and label_font.size(label)[0] > width - 330:
             label = label[:-2] + "…"
-        text(surface, label_font, label, p.text, (r.x + 20, r.y + 12))
-        if row.adjustable:
-            text(surface, self.ui(400, 13), row.description, p.muted, (r.x + 20, r.y + 38))
+        text(surface, label_font, label, p.text, (r.x + 20, r.y + (8 if r.h < 56 else 12)))
+        if row.adjustable and row.button:
+            desc_y = r.y + (r.h - 22 if r.h < 64 else 38)
+            text(surface, self.ui(400, 13), row.description, p.muted, (r.x + 20, desc_y))
+            bf = self.ui(700, 14)
+            bw = bf.size(row.value)[0] + 32
+            btn = pygame.Rect(r.right - 20 - bw, 0, bw, 30)
+            btn.centery = r.centery
+            if row.progress is not None:
+                rrect(surface, p.line, btn, 15)
+                old_clip = surface.get_clip()
+                surface.set_clip(pygame.Rect(btn.x, btn.y, int(btn.w * row.progress), btn.h))
+                rrect(surface, p.accent, btn, 15)  # clipped so the fill keeps the pill shape
+                surface.set_clip(old_clip)
+                text(surface, bf, row.value, p.text, btn.center, "center")
+            elif row.value.startswith("Installed"):
+                text(surface, bf, row.value, p.good, (btn.right, btn.centery), "midright")
+            else:
+                if selected:
+                    rrect(surface, p.accent, btn, 15)
+                else:
+                    rrect(surface, p.accent, btn, 15, width=2)
+                text(surface, bf, row.value, (255, 255, 255) if selected else p.accent,
+                     btn.center, "center")
+        elif row.adjustable:
+            desc_y = r.y + (r.h - 22 if r.h < 64 else 38)
+            text(surface, self.ui(400, 13), row.description, p.muted, (r.x + 20, desc_y))
             val_font = self.ui(700, 16)
             value = row.value
             while len(value) > 4 and val_font.size(value)[0] > 250:
@@ -201,12 +225,13 @@ class Skin:
             vx = r.right - 44 - vw
             color = self.swatch_color(row.swatch) if row.swatch else (
                 p.accent if selected else p.text)
+            cy = r.y + (20 if r.h < 56 else 24)
             if row.swatch:
-                pygame.draw.circle(surface, color, (vx - 34, r.y + 24), 5)
-            text(surface, val_font, value, color, (vx, r.y + 14))
+                pygame.draw.circle(surface, color, (vx - 34, cy), 5)
+            text(surface, val_font, value, color, (vx, cy - 10))
             col = p.accent if selected else p.faint
-            chevron(surface, col, (vx - 16, r.y + 24), 5, "left")
-            chevron(surface, col, (r.right - 28, r.y + 24), 5, "right")
+            chevron(surface, col, (vx - 16, cy), 5, "left")
+            chevron(surface, col, (r.right - 28, cy), 5, "right")
         return r
 
     def draw_settings(self, surface: pygame.Surface, frame: SettingsFrame) -> None:
@@ -217,12 +242,12 @@ class Skin:
         text(surface, self.ui(400, 15), "Changes apply instantly and are saved automatically.",
              p.muted, (60, 86))
 
-        y = 124
-        compact = len(frame.rows) > 6
+        y = 120
+        n = len(frame.rows)
+        row_h, gap = (68, 10) if n <= 6 else (58, 6) if n <= 8 else (52, 5)
         for i, row in enumerate(frame.rows):
-            r = self._draw_row(surface, row, i == frame.selected, 48, y, 560,
-                               58 if compact else 68)
-            y = r.bottom + (6 if compact else 10)
+            r = self._draw_row(surface, row, i == frame.selected, 48, y, 560, row_h)
+            y = r.bottom + gap
 
         # Live preview of the selected theme
         pv = pygame.Rect(650, 130, w - 650 - 48, 0)

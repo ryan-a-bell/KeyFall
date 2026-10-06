@@ -13,19 +13,23 @@ def main() -> None:
         help="Visual theme for this run (overrides the saved setting)",
     )
     parser.add_argument(
-        "--download-soundfont", action="store_true",
-        help="Download the default piano SoundFont (YDP Grand, ~37 MB) and exit",
+        "--download-soundfont", nargs="?", const="piano", choices=["piano", "gm", "all"],
+        help="Download free SoundFonts and exit: piano (YDP Grand, ~37 MB), "
+             "gm (MuseScore General instruments + drums, ~40 MB), or all",
     )
     args = parser.parse_args()
 
     if args.download_soundfont:
-        from keyfall.soundfont import DEFAULT_SOUNDFONT_ATTRIBUTION, download_default_soundfont
-        print("Downloading default piano SoundFont...")
-        try:
-            path = download_default_soundfont()
-        except Exception as exc:
-            sys.exit(f"Download failed: {exc}")
-        print(f"Installed {path}\n{DEFAULT_SOUNDFONT_ATTRIBUTION}")
+        from keyfall.soundfont import DOWNLOADS, download
+        keys = ["piano", "gm"] if args.download_soundfont == "all" else [args.download_soundfont]
+        for key in keys:
+            spec = DOWNLOADS[key]
+            print(f"Downloading {spec.label} (~{spec.size_mb} MB)...")
+            try:
+                path = download(spec)
+            except Exception as exc:
+                sys.exit(f"Download failed: {exc}")
+            print(f"Installed {path}\n{spec.attribution}")
         return
 
     from keyfall.app import App

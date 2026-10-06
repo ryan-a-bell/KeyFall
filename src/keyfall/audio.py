@@ -42,10 +42,25 @@ class AudioEngine:
         if soundfont_path:
             self.load_soundfont(soundfont_path)
 
+    @property
+    def has_soundfont(self) -> bool:
+        return self._sfid is not None
+
+    def status_text(self) -> str:
+        """Short description for the menu, e.g. "Sound: YDP.sf2 + MuseScore_General.sf3"."""
+        if self.soundfont_path is None:
+            return "Sound: off (no SoundFont; download one in Settings)"
+        text = f"Sound: {self.soundfont_path.name}"
+        if self.gm_soundfont_path is not None:
+            text += f" + {self.gm_soundfont_path.name}"
+        return text
+
     def load_soundfont(self, path: str | Path) -> None:
         sfid = self.fs.sfload(str(path))
         if sfid < 0:
             raise RuntimeError(f"Could not load SoundFont: {path}")
+        if self._sfid is not None:  # keep the previous one available for other instruments
+            self._extra_sfids.append(self._sfid)
         self._sfid = sfid
         self.soundfont_path = Path(path)
         self.fs.program_select(0, self._sfid, 0, 0)

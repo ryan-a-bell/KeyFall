@@ -16,6 +16,7 @@ from keyfall.renderer.skins.demo import demo_frame, demo_song
 from keyfall.renderer.skins.frames import SettingsFrame, SettingsRow
 from keyfall.renderer.theme import THEME_ORDER, THEMES
 from keyfall.settings import EFFECT_LEVELS
+from keyfall.soundfont import GM_DOWNLOAD, PIANO_DOWNLOAD, installed_path
 from keyfall.views.base import ViewAction, ViewContext
 
 _EFFECT_NAMES = {"full": "Full", "reduced": "Reduced", "off": "Off"}
@@ -38,8 +39,9 @@ _PALETTE_NAMES = {
 }
 
 (ROW_THEME, ROW_EFFECTS, ROW_LABELS, ROW_COLORS, ROW_MIDI, ROW_OUT, ROW_OUT_MODE,
- ROW_DONE) = range(8)
-ROW_COUNT = 8
+ ROW_PIANO, ROW_GM, ROW_DONE) = range(10)
+ROW_COUNT = 10
+_DOWNLOAD_ROWS = {ROW_PIANO: PIANO_DOWNLOAD, ROW_GM: GM_DOWNLOAD}
 _OUT_MODE_NAMES = {MODE_ACCOMPANIMENT: "Accompaniment", MODE_LIGHTS: "Key lights",
                    MODE_BOTH: "Both"}
 
@@ -149,6 +151,9 @@ class SettingsView:
             self._change_output(step)
         elif row == ROW_OUT_MODE:
             ui.devices.output_mode = _cycle(list(OUTPUT_MODES), ui.devices.output_mode, step)
+        elif row in _DOWNLOAD_ROWS:
+            self.start_download(_DOWNLOAD_ROWS[row])
+            return
         else:
             return
         try:
@@ -158,8 +163,21 @@ class SettingsView:
             ui.rebuild()
             self._message = f"Applied, but could not save: {exc}"
 
+    def start_download(self, spec) -> None:
+        ui = self._context.ui
+        job = ui.downloader.jobs.get(spec.key)
+        if installed_path(spec) is not None and (job is None or job.status != "error"):
+            self._message = f"{spec.label} is already installed"
+            return
+        ui.downloader.start(spec)
+        self._message = f"Downloading {spec.label}…"
+
     # ------------------------------------------------------------------ frame
     def update(self, dt: float) -> ViewAction | None:
+        if self._context and self._context.ui:
+            messages = self._context.ui.apply_downloads(self._context.audio)
+            if messages:
+                self._message = " · ".join(messages)
         return None
 
     def _rows(self) -> list[SettingsRow]:
@@ -176,6 +194,8 @@ class SettingsView:
                         "Colorblind-friendly palettes override the theme"),
             self._midi_row(),
             *self._output_rows(),
+            self._download_row(PIANO_DOWNLOAD, "Grand piano for your playing (CC-BY 3.0)"),
+            self._download_row(GM_DOWNLOAD, "Guitar, strings, bass, drums… for backing (MIT)"),
             SettingsRow("Done", "", "", adjustable=False),
         ]
 
@@ -219,6 +239,23 @@ class SettingsView:
             SettingsRow("Keyboard output", value, status),
             SettingsRow("Send to keyboard", _OUT_MODE_NAMES[mode], mode_desc),
         ]
+
+    def _download_row(self, spec, about: str) -> SettingsRow:
+        job = self._context.ui.downloader.jobs.get(spec.key)
+        if job is not None and job.status == "downloading":
+            if job.fraction >= 0.999:
+                return SettingsRow(spec.label, "Installing…", "Verifying and unpacking",
+                                   button=True, progress=1.0)
+            done_mb = job.fraction * spec.size_mb
+            return SettingsRow(spec.label, f"{job.fraction:.0%}",
+                               f"Downloading… {done_mb:.0f} of {spec.size_mb} MB",
+                               button=True, progress=job.fraction)
+        if job is not None and job.status == "error":
+            return SettingsRow(spec.label, "Retry", f"Download failed: {job.error}"[:70],
+                               button=True)
+        if installed_path(spec) is not None:
+            return SettingsRow(spec.label, "Installed", about, button=True)
+        return SettingsRow(spec.label, f"Download · {spec.size_mb} MB", about, button=True)
 
     def _preview_surface(self) -> pygame.Surface:
         """Render the current settings onto a demo song (cached until settings change)."""
