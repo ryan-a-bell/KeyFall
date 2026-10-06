@@ -65,7 +65,8 @@ class PracticeView:
     def on_enter(self, context: ViewContext) -> None:
         self._context = context
         self._full_song = context.song or Song(title="Empty")
-        self._stats = SessionStats(song_title=self._full_song.title)
+        self._stats = SessionStats(song_title=self._full_song.title,
+                                   song_hash=self._full_song.source_hash)
         self._streak = 0
         self._pressed = set()
         self._pending_notes = []

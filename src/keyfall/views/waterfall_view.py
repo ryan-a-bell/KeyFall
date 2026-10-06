@@ -61,7 +61,8 @@ class WaterfallView:
         self._engine = PlaybackEngine(song)
         self._engine.set_tempo_scale(context.tempo_scale)
         self._engine.active_hand = context.hand
-        self._stats = SessionStats(song_title=song.title)
+        self._stats = SessionStats(song_title=song.title,
+                                   song_hash=song.source_hash)
         self._show_notation = appearance(context).notation == "always"
         self._start_position()
         self._streak = 0

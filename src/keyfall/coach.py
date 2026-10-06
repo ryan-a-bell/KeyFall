@@ -14,7 +14,8 @@ pass the coach decides:
 
 It always works on the earliest section that isn't mastered yet, so the song
 is learned front to back. Once every section is mastered, it suggests a full
-run-through. Progress is saved per song in ~/.keyfall/coach/.
+run-through. Progress is saved per song in ~/.keyfall/coach/; ``merge_coach_docs``
+combines the same song's progress from two devices.
 
 Between passes, technique tips come from :mod:`keyfall.ai.technique_feedback`
 (timing drift per hand, unevenness, dynamics...).
@@ -31,8 +32,9 @@ from pathlib import Path
 
 from keyfall.models import Hand, HitResult, Song
 from keyfall.playback import BEATS_PER_BAR, beat_length
+from keyfall.storage import data_dir, new_id, now_iso
 
-COACH_DIR = Path.home() / ".keyfall" / "coach"
+COACH_DIR = data_dir() / "coach"
 SECTION_BARS = 4
 ADVANCE_AT = 90.0
 STRUGGLE_AT = 60.0
@@ -108,6 +110,7 @@ class PassRecord:
     tempo_pct: int
     accuracy: float
     seconds: float
+    id: str = ""  # unique per pass, so merging two devices' history doesn't double up
 
 
 @dataclass
@@ -116,6 +119,8 @@ class CoachState:
     sections: list[SectionState] = field(default_factory=list)
     history: list[PassRecord] = field(default_factory=list)
     full_run_tempo: int = 100
+    song_hash: str = ""  # Song.source_hash
+    updated_at: str = ""  # UTC ISO time of the last save
 
     # ------------------------------------------------------------------ building
     @classmethod
@@ -135,7 +140,7 @@ class CoachState:
             if any(n.hand == Hand.LEFT for n in notes):
                 hands.append("left")
             sections.append(SectionState(first, last, hands))
-        return cls(song_title=song.title, sections=sections)
+        return cls(song_title=song.title, sections=sections, song_hash=song.source_hash)
 
     # ------------------------------------------------------------------ planning
     def current_section(self) -> SectionState | None:
@@ -161,7 +166,7 @@ class CoachState:
         """Apply one pass and return the coach's verdict for the player."""
         self.history.append(PassRecord(_dt.date.today().isoformat(), step.first_bar,
                                        step.last_bar, step.rung, step.tempo_pct,
-                                       round(accuracy, 1), round(seconds, 1)))
+                                       round(accuracy, 1), round(seconds, 1), new_id()))
         if step.rung == "full":
             if accuracy >= ADVANCE_AT:
                 return f"Full run at {step.tempo_pct}%: {accuracy:.0f}%. You've learned this song!"
@@ -221,9 +226,8 @@ class CoachState:
         return (folder or COACH_DIR) / f"{safe}.json"
 
     def save(self, folder: Path | None = None) -> None:
-        path = self.path_for(self.song_title, folder)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(asdict(self), indent=1))
+        self.updated_at = now_iso()
+        write_coach_doc(asdict(self), folder)
 
     @classmethod
     def load(cls, song: Song, folder: Path | None = None) -> CoachState:
@@ -239,7 +243,53 @@ class CoachState:
             return fresh  # the song's structure changed (e.g. different hand split)
         return cls(song_title=song.title, sections=sections,
                    history=[PassRecord(**r) for r in data.get("history", [])],
-                   full_run_tempo=data.get("full_run_tempo", 100))
+                   full_run_tempo=data.get("full_run_tempo", 100),
+                   song_hash=song.source_hash or data.get("song_hash", ""),
+                   updated_at=data.get("updated_at", ""))
+
+
+# ---------------------------------------------------------------------- sync
+def read_coach_docs(folder: Path | None = None) -> list[dict]:
+    """Every saved coach state, as the raw dicts written by ``CoachState.save``."""
+    docs = []
+    for path in sorted((folder or COACH_DIR).glob("*.json")):
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        if isinstance(data, dict) and data.get("song_title"):
+            docs.append(data)
+    return docs
+
+
+def write_coach_doc(doc: dict, folder: Path | None = None) -> None:
+    path = CoachState.path_for(doc["song_title"], folder)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(doc, indent=1))
+
+
+def merge_coach_docs(local: dict | None, remote: dict) -> dict:
+    """One song's coach progress from two devices, combined.
+
+    Every practice pass from both is kept. Section progress comes from whichever was
+    saved most recently, since the ladder position can't be added together.
+    """
+    if not local:
+        return remote
+    newer, older = (remote, local) if remote.get("updated_at", "") > \
+        local.get("updated_at", "") else (local, remote)
+
+    def key(record: dict) -> tuple:
+        return (record.get("id"),) if record.get("id") else tuple(sorted(record.items()))
+
+    seen, history = set(), []
+    for record in older.get("history", []) + newer.get("history", []):
+        if key(record) not in seen:
+            seen.add(key(record))
+            history.append(record)
+    history.sort(key=lambda r: r.get("date", ""))  # stable: same-day passes keep their order
+    return {**newer, "history": history,
+            "song_hash": newer.get("song_hash") or older.get("song_hash", "")}
 
 
 def technique_tips(results: list[HitResult], limit: int = 2) -> list[str]:

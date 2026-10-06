@@ -1,7 +1,8 @@
 """User settings persisted to ~/.keyfall/settings.json.
 
 The file holds one section per area (``appearance``, ``accessibility``, ...).
-Saving one section never drops the others.
+Saving one section never drops the others, and stamps that section's ``updated_at``
+(under ``_updated``) so sync can keep the most recent edit of each section.
 """
 
 from __future__ import annotations
@@ -11,7 +12,12 @@ from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Any
 
-SETTINGS_PATH = Path.home() / ".keyfall" / "settings.json"
+from keyfall.storage import data_dir, now_iso
+
+SETTINGS_PATH = data_dir() / "settings.json"
+STAMPS_KEY = "_updated"  # {section: ISO time of its last local save}
+# Sections that follow the player between devices; "devices" names this machine's ports.
+SYNCED_SECTIONS = ("appearance", "accessibility", "practice")
 
 EFFECT_LEVELS = ("full", "reduced", "off")
 
@@ -70,11 +76,37 @@ def load_section(name: str, cls: type, path: Path | None = None):
 
 def save_section(name: str, value: Any, path: Path | None = None) -> None:
     """Write one dataclass section, preserving every other section in the file."""
-    path = path or SETTINGS_PATH
+    _write_section(name, asdict(value), now_iso(), path or SETTINGS_PATH)
+
+
+def _write_section(name: str, values: dict[str, Any], updated_at: str, path: Path) -> None:
     data = _read_all(path)
-    data[name] = asdict(value)
+    data[name] = values
+    stamps = data.get(STAMPS_KEY)
+    data[STAMPS_KEY] = {**(stamps if isinstance(stamps, dict) else {}), name: updated_at}
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2))
+
+
+def synced_sections(path: Path | None = None) -> dict[str, tuple[dict[str, Any], str]]:
+    """``{section: (values, updated_at)}`` for each saved section that syncs."""
+    data = _read_all(path or SETTINGS_PATH)
+    stamps = data.get(STAMPS_KEY)
+    stamps = stamps if isinstance(stamps, dict) else {}
+    return {name: (data[name], str(stamps.get(name, "")))
+            for name in SYNCED_SECTIONS if isinstance(data.get(name), dict)}
+
+
+def apply_remote_section(name: str, values: dict[str, Any], updated_at: str,
+                         path: Path | None = None) -> bool:
+    """Take a section saved on another device if it's newer than ours. True if applied."""
+    if name not in SYNCED_SECTIONS or not isinstance(values, dict):
+        return False
+    local = synced_sections(path).get(name)
+    if local is not None and local[1] >= updated_at:
+        return False
+    _write_section(name, values, updated_at, path or SETTINGS_PATH)
+    return True
 
 
 def load_appearance(path: Path | None = None) -> AppearanceSettings:

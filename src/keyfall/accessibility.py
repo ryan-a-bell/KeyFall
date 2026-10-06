@@ -5,9 +5,11 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from enum import Enum, auto
-from pathlib import Path
+
+from keyfall.settings import save_section
+from keyfall.storage import data_dir
 
 
 class ColorPalette(Enum):
@@ -58,7 +60,7 @@ class AccessibilitySettings:
             return NoteLabelMode.NONE
 
 
-_SETTINGS_PATH = Path.home() / ".keyfall" / "settings.json"
+_SETTINGS_PATH = data_dir() / "settings.json"
 
 
 def load_settings() -> AccessibilitySettings:
@@ -78,15 +80,7 @@ def load_settings() -> AccessibilitySettings:
 
 def save_settings(settings: AccessibilitySettings) -> None:
     """Persist accessibility settings to disk."""
-    _SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    data: dict = {}
-    if _SETTINGS_PATH.exists():
-        try:
-            data = json.loads(_SETTINGS_PATH.read_text())
-        except Exception:
-            pass
-    data["accessibility"] = asdict(settings)
-    _SETTINGS_PATH.write_text(json.dumps(data, indent=2))
+    save_section("accessibility", settings, _SETTINGS_PATH)
 
 
 def apply_accessibility(settings: AccessibilitySettings) -> None:

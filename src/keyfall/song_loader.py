@@ -9,6 +9,7 @@ from pathlib import Path
 import mido
 
 from keyfall.models import Hand, NoteEvent, Song, TempoChange
+from keyfall.storage import file_hash
 
 
 class HandSplitStrategy(Enum):
@@ -50,11 +51,13 @@ def load_song(
     suffix = path.suffix.lower()
     try:
         if suffix in (".mid", ".midi"):
-            return _load_midi(path, hand_split, keep_drums)
+            song = _load_midi(path, hand_split, keep_drums)
         elif suffix in (".xml", ".mxl", ".musicxml"):
-            return _load_musicxml(path)
+            song = _load_musicxml(path)
         else:
             raise SongLoadError(f"Unsupported file format: {path.suffix}")
+        song.source_hash = file_hash(path)
+        return song
     except SongLoadError:
         raise
     except Exception as exc:
