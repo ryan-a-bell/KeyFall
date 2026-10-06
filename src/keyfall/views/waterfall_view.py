@@ -21,6 +21,7 @@ from keyfall.playback import (
 from keyfall.renderer.skins.frames import PlayFrame, SessionResult
 from keyfall.views.base import (
     ViewAction,
+    appearance,
     ViewContext,
     best_accuracy,
     metronome_mode,
@@ -48,6 +49,7 @@ class WaterfallView:
         self._offsets: list[float] = []
         self._outputs: SongOutputs | None = None
         self._click = ClickTrack()
+        self._show_notation = False
         self._press_pos: dict[int, float] = {}
         self._miss_bars: Counter[int] = Counter()
 
@@ -60,6 +62,7 @@ class WaterfallView:
         self._engine.set_tempo_scale(context.tempo_scale)
         self._engine.active_hand = context.hand
         self._stats = SessionStats(song_title=song.title)
+        self._show_notation = appearance(context).notation == "always"
         self._start_position()
         self._streak = 0
         self._pressed = set()
@@ -90,6 +93,8 @@ class WaterfallView:
             return ViewAction(kind="pop")
         elif event.key == pygame.K_SPACE:
             engine.paused = not engine.paused
+        elif event.key == pygame.K_n:
+            self._show_notation = not self._show_notation
         elif event.key == pygame.K_w:
             engine.wait_mode = not engine.wait_mode
         elif event.key == pygame.K_r:
@@ -225,12 +230,14 @@ class WaterfallView:
             paused=engine.paused,
             active_hand=engine.active_hand,
             mode="Play",
+            show_notation=self._show_notation,
             label_mode=ctx.ui.accessibility.get_label_mode() if ctx.ui else NoteLabelMode.NONE,
             judgement=self._judgement,
             judgement_age=self._clock - self._judgement_at,
             timing_offsets_ms=self._offsets,
-            hints="Space: pause | W: wait | +/-: tempo | 1/2/3: hands | R: restart | Esc: menu",
+            hints="Space: pause | W: wait | N: sheet music | +/-: tempo | 1/2/3: hands | R: restart",
             clock=self._clock,
+            rising=appearance(ctx).layout == "rising",
             count_in=(math.ceil(-engine.position / beat_length(engine.song) - 1e-6)
                       if engine.position < 0 else None),
             metronome=metronome_mode(ctx),

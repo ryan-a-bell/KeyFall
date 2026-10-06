@@ -290,3 +290,11 @@ def poll_inputs(ctx: ViewContext | None, pressed: set[int], press_pos: dict[int,
                 pressed.discard(evt.pitch)
                 if echo and ctx.audio:
                     ctx.audio.note_off(evt.pitch)
+
+
+def appearance(ctx: ViewContext | None):
+    """The appearance settings (layout, sheet music, theme), or defaults."""
+    from keyfall.settings import AppearanceSettings
+    if ctx is None or ctx.ui is None:
+        return AppearanceSettings()
+    return ctx.ui.appearance

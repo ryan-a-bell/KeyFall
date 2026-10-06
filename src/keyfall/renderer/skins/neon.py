@@ -112,25 +112,34 @@ class NeonSkin(Skin):
         lo, hi = self.song_range(frame.song)
         layout = KeyLayout(lo, hi, 0, w, h - KEYBOARD_HEIGHT, KEYBOARD_HEIGHT)
         hit_y = layout.y - 4
-        top = 150 if frame.show_notation else 0
+        notation_h = 150 if frame.show_notation else 0
+        top = notation_h
+        field = pygame.Rect(0, top, w, h - top)  # notes + keyboard, as in the falling layout
 
-        self._draw_field(surface, frame, layout, hit_y)
+        target = self.begin_field(surface, frame.rising)
+        self._draw_field(target, frame, layout, hit_y)
         pressed = self.pressed_hands(frame, layout)
         if self.beams_on:
             for pitch, hand in pressed.items():
                 x, lw = layout.lane(pitch)
                 beam = stretched_gradient((int(lw) + 10, hit_y), (0, 0, 0),
-                                 mix(self.hand_color(hand), (0, 0, 0), 0.45))
-                surface.blit(beam, (int(x) - 5, 0), special_flags=pygame.BLEND_RGB_ADD)
-        self.draw_backing(surface, frame, layout, pygame.Rect(0, 0, w, hit_y), LOOK_AHEAD,
+                                          mix(self.hand_color(hand), (0, 0, 0), 0.45))
+                target.blit(beam, (int(x) - 5, 0), special_flags=pygame.BLEND_RGB_ADD)
+        self.draw_backing(target, frame, layout, pygame.Rect(0, 0, w, hit_y), LOOK_AHEAD,
                           (150, 110, 230), fill_alpha=30, edge_alpha=130,
                           clip=pygame.Rect(0, top, w, hit_y - top))
-        self._draw_notes(surface, frame, layout, hit_y, top)
-        self._draw_hit_line(surface, frame, layout, hit_y, pressed)
-        self.draw_keyboard(surface, layout, pressed)
-        if frame.show_notation:
+        self._draw_notes(target, frame, layout, hit_y, top)
+        self._draw_hit_line(target, frame, layout, hit_y, pressed)
+        self.draw_keyboard(target, layout, pressed)
+        notes_area = pygame.Rect(0, top, w, hit_y - top)
+        if frame.rising:
+            self.end_field(surface, target, field, 0)
+            notes_area = self.flip_rect(notes_area, field, 0)
+            if frame.show_notation:
+                self.draw_notation_panel(surface, frame, pygame.Rect(0, field.h, w, notation_h))
+        elif frame.show_notation:
             self.draw_notation_panel(surface, frame, pygame.Rect(0, 0, w, top))
-        self._draw_hud(surface, frame, hit_y, top)
+        self._draw_hud(surface, frame, notes_area, frame.rising)
 
     def _draw_field(self, surface, frame: PlayFrame, layout: KeyLayout, hit_y: int) -> None:
         w, h = surface.get_size()
@@ -187,7 +196,8 @@ class NeonSkin(Skin):
             pygame.draw.rect(surface, mix(c, (255, 255, 255), 0.7), r, 2, border_radius=6)
             lbl = label_for(pitch, self.label_mode)
             if lbl and r.h > 22 and r.w > 12:
-                text(surface, label_font, lbl, (255, 255, 255), (r.centerx, r.bottom - 10),
+                self.field_text(surface, label_font, lbl, (255, 255, 255),
+                                (r.centerx, r.bottom - 10),
                      "center")
 
     def _draw_hit_line(self, surface, frame: PlayFrame, layout: KeyLayout, hit_y: int,
@@ -223,14 +233,22 @@ class NeonSkin(Skin):
             sx, sy = cx + math.cos(ang) * tail, hit_y + math.sin(ang) * tail
             pygame.draw.line(surface, mix(c, (40, 10, 60), phase), (sx, sy), (ex, ey), 2)
 
-    def _draw_hud(self, surface, frame: PlayFrame, hit_y: int, top: int) -> None:
+    def _draw_hud(self, surface, frame: PlayFrame, notes: pygame.Rect, rising: bool) -> None:
+        """HUD over the notes area; the edge nearest the keyboard is where notes land."""
         p = self.p
         w = surface.get_width()
-        y0 = top
-        scrim = vgradient((w, 140), (90, 90, 90), (255, 255, 255))
-        surface.blit(scrim, (0, y0), special_flags=pygame.BLEND_RGB_MULT)
-        rrect(surface, (255, 255, 255), (0, y0, w, 4), 0, alpha=25)
-        bar = pygame.Rect(0, y0, int(w * frame.progress), 4)
+        # title/score/combo go at the far end of the notes, away from where they land
+        y0 = notes.bottom - 120 if rising else notes.y
+        if rising:
+            scrim = vgradient((w, 140), (255, 255, 255), (90, 90, 90))
+            surface.blit(scrim, (0, notes.bottom - 140), special_flags=pygame.BLEND_RGB_MULT)
+            bar_y = notes.bottom - 4
+        else:
+            scrim = vgradient((w, 140), (90, 90, 90), (255, 255, 255))
+            surface.blit(scrim, (0, y0), special_flags=pygame.BLEND_RGB_MULT)
+            bar_y = y0
+        rrect(surface, (255, 255, 255), (0, bar_y, w, 4), 0, alpha=25)
+        bar = pygame.Rect(0, bar_y, int(w * frame.progress), 4)
         self._glow_rect(surface, bar, p.accent, 2)
         pygame.draw.rect(surface, p.accent, bar)
 
@@ -274,7 +292,7 @@ class NeonSkin(Skin):
             color = p.miss if frame.judgement == HitGrade.MISS else p.gold
             lift = int(frame.judgement_age * 40)
             plate = pygame.Rect(0, 0, 250, 78)
-            plate.center = (w // 2, hit_y - 170 - lift)
+            plate.center = (w // 2, notes.y + 170 + lift if rising else notes.bottom - 170 - lift)
             rrect(surface, (8, 3, 24), plate, 16, alpha=150)
             self.glow_text(surface, self.display(900, 34), label, color,
                            (plate.centerx, plate.y + 30), strength=2)
@@ -283,7 +301,10 @@ class NeonSkin(Skin):
                      (plate.centerx, plate.y + 60), "center")
 
         # groove meter (accuracy)
-        gm = pygame.Rect(w - 40, y0 + 130, 12, max(60, hit_y - y0 - 220))
+        if rising:
+            gm = pygame.Rect(w - 40, notes.y + 40, 12, max(60, y0 - notes.y - 90))
+        else:
+            gm = pygame.Rect(w - 40, y0 + 130, 12, max(60, notes.bottom - y0 - 220))
         rrect(surface, (255, 255, 255), gm, 6, alpha=20)
         fill_h = int(gm.h * (st.accuracy_pct / 100 if st.total_notes else 0))
         if fill_h > 0:
@@ -293,28 +314,29 @@ class NeonSkin(Skin):
 
         if frame.count_in:
             self.glow_text(surface, self.display(900, 110), str(frame.count_in), p.accent2,
-                           (w // 2, hit_y // 2 + 20), strength=2)
+                           (w // 2, notes.centery + 20), strength=2)
             tracked(surface, self.label(700, 20), "GET READY", p.muted,
-                    (w // 2, hit_y // 2 + 90), 6, "midtop")
+                    (w // 2, notes.centery + 90), 6, "midtop")
         if frame.paused:
-            self._draw_paused(surface, frame, hit_y)
+            self._draw_paused(surface, frame, notes)
 
-    def _draw_paused(self, surface, frame: PlayFrame, hit_y: int) -> None:
+    def _draw_paused(self, surface, frame: PlayFrame, notes: pygame.Rect) -> None:
         p = self.p
         w = surface.get_width()
-        veil = pygame.Surface((w, hit_y), pygame.SRCALPHA)
+        veil = pygame.Surface(notes.size, pygame.SRCALPHA)
         veil.fill((6, 2, 20, 180))
-        surface.blit(veil, (0, 0))
-        self.glow_text(surface, self.display(900, 44), "PAUSED", p.accent2, (w // 2, 230),
+        surface.blit(veil, notes.topleft)
+        base_y = notes.y + max(0, notes.h // 2 - 70)
+        self.glow_text(surface, self.display(900, 44), "PAUSED", p.accent2, (w // 2, base_y),
                        strength=2)
         keys = [("SPACE", "RESUME"), ("W", "WAIT MODE"), ("- / =", "TEMPO"),
                 ("1 2 3", "HANDS"), ("R", "RESTART"), ("ESC", "MENU")]
         x = w // 2 - 330
         for k, label in keys:
             kw = self.label(700, 15).size(k)[0] + 18
-            rrect(surface, (255, 255, 255), (x, 300, kw, 26), 6, alpha=28)
-            text(surface, self.label(700, 15), k, p.text, (x + kw // 2, 313), "center")
-            r = text(surface, self.label(600, 15), label, p.muted, (x + kw + 8, 304))
+            rrect(surface, (255, 255, 255), (x, base_y + 70, kw, 26), 6, alpha=28)
+            text(surface, self.label(700, 15), k, p.text, (x + kw // 2, base_y + 83), "center")
+            r = text(surface, self.label(600, 15), label, p.muted, (x + kw + 8, base_y + 74))
             x = r.right + 22
 
     def draw_grade(self, surface, letter: str, center, size: int) -> None:

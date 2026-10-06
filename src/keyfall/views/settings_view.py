@@ -16,7 +16,7 @@ from keyfall.renderer.skins import create_skin
 from keyfall.renderer.skins.demo import demo_frame, demo_song
 from keyfall.renderer.skins.frames import SettingsFrame, SettingsRow
 from keyfall.renderer.theme import THEME_ORDER, THEMES
-from keyfall.settings import EFFECT_LEVELS, METRONOME_MODES
+from keyfall.settings import EFFECT_LEVELS, LAYOUTS, METRONOME_MODES, NOTATION_MODES
 from keyfall.soundfont import GM_DOWNLOAD, PIANO_DOWNLOAD, installed_path
 from keyfall.views.base import ViewAction, ViewContext
 
@@ -39,9 +39,13 @@ _PALETTE_NAMES = {
     ColorPalette.MONOCHROME: "Monochrome",
 }
 
-(ROW_THEME, ROW_EFFECTS, ROW_LABELS, ROW_COLORS, ROW_METRONOME, ROW_MIDI, ROW_MIC,
- ROW_MIC_SENS, ROW_OUT, ROW_OUT_MODE, ROW_PIANO, ROW_GM, ROW_DONE) = range(13)
-ROW_COUNT = 13
+(ROW_THEME, ROW_EFFECTS, ROW_LABELS, ROW_LAYOUT, ROW_NOTATION, ROW_COLORS, ROW_METRONOME,
+ ROW_MIDI, ROW_MIC, ROW_MIC_SENS, ROW_OUT, ROW_OUT_MODE, ROW_PIANO, ROW_GM,
+ ROW_DONE) = range(15)
+ROW_COUNT = 15
+_LAYOUT_NAMES = {"falling": "Notes fall · piano at bottom",
+                 "rising": "Notes rise · piano on top"}
+_NOTATION_NAMES = {"practice": "Practice only", "always": "Play and Practice", "off": "Off"}
 _SENS_NAMES = {"low": "Low (noisy room)", "normal": "Normal", "high": "High (quiet piano)"}
 _METRONOME_NAMES = {"off": "Off", "count-in": "Count-in only", "on": "Always"}
 _DOWNLOAD_ROWS = {ROW_PIANO: PIANO_DOWNLOAD, ROW_GM: GM_DOWNLOAD}
@@ -184,6 +188,10 @@ class SettingsView:
             a.effects = _cycle(list(EFFECT_LEVELS), a.effects, step)
         elif row == ROW_LABELS:
             acc.note_labels = _cycle(_LABEL_OPTIONS, acc.get_label_mode(), step).name
+        elif row == ROW_LAYOUT:
+            a.layout = _cycle(list(LAYOUTS), a.layout, step)
+        elif row == ROW_NOTATION:
+            a.notation = _cycle(list(NOTATION_MODES), a.notation, step)
         elif row == ROW_COLORS:
             acc.color_palette = _cycle(_PALETTES, acc.get_palette(), step).name
         elif row == ROW_METRONOME:
@@ -240,6 +248,10 @@ class SettingsView:
                         "Glow, light beams and sparks (lower for slower computers)"),
             SettingsRow("Note labels", _LABEL_NAMES.get(acc.get_label_mode(), "Off"),
                         "Show note names on the falling notes"),
+            SettingsRow("Screen layout", _LAYOUT_NAMES[a.layout],
+                        "Sheet music on top and piano below, or flipped"),
+            SettingsRow("Sheet music", _NOTATION_NAMES[a.notation],
+                        "Show the score above (or below) the notes; N toggles it while playing"),
             SettingsRow("Hand colors", _PALETTE_NAMES[acc.get_palette()],
                         "Colorblind-friendly palettes override the theme"),
             SettingsRow("Metronome", _METRONOME_NAMES[ui.practice.metronome],
@@ -314,12 +326,14 @@ class SettingsView:
         """Render the current settings onto a demo song (cached until settings change)."""
         ui = self._context.ui
         key = (ui.appearance.theme, ui.appearance.effects, ui.accessibility.color_palette,
-               ui.accessibility.note_labels)
+               ui.accessibility.note_labels, ui.appearance.layout, ui.appearance.notation)
         if key != self._preview_key or self._preview is None:
             skin = create_skin(ui.appearance.theme, ui.appearance.effects, ui.accessibility)
             surf = pygame.Surface(self._context.screen_size)
-            skin.draw_play(surf, demo_frame(self._song,
-                                            label_mode=ui.accessibility.get_label_mode()))
+            frame = demo_frame(self._song, label_mode=ui.accessibility.get_label_mode())
+            frame.rising = ui.appearance.layout == "rising"
+            frame.show_notation = ui.appearance.notation != "off"
+            skin.draw_play(surf, frame)
             self._preview, self._preview_key = surf, key
         return self._preview
 

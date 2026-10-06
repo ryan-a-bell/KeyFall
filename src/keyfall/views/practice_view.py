@@ -22,6 +22,7 @@ from keyfall.playback import (
 from keyfall.renderer.skins.frames import PlayFrame, SessionResult
 from keyfall.views.base import (
     ViewAction,
+    appearance,
     ViewContext,
     best_accuracy,
     metronome_mode,
@@ -77,6 +78,7 @@ class PracticeView:
 
         self._coach = context.coach_step
         self._hits = []
+        self._show_notation = appearance(context).notation != "off"
         if self._coach is not None:
             self._section_start, self._section_end = self._coach.first_bar, self._coach.last_bar
             self._looping = False
@@ -302,6 +304,7 @@ class PracticeView:
             hit_results=self._hit_results,
             hints="N:notation L:loop [/]:section W:wait +/-:tempo 1/2/3:hand R:restart",
             clock=self._clock,
+            rising=appearance(ctx).layout == "rising",
             count_in=(math.ceil(-engine.position / beat_length(engine.song) - 1e-6)
                       if engine.position < 0 else None),
             metronome=metronome_mode(ctx),

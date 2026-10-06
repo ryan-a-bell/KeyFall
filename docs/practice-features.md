@@ -36,3 +36,25 @@ Buttons:
 - **Practice bars X–Y** (selected by default when you missed anything) opens Practice mode looping exactly those bars.
 - **Play again** (`R`)
 - **Menu** (`Esc`)
+
+## Screen layout and sheet music
+
+**Settings → Screen layout**:
+
+| Option | Arrangement (top to bottom) |
+|---|---|
+| **Notes fall · piano at bottom** (default) | sheet music → notes falling down → piano |
+| **Notes rise · piano on top** | piano → notes rising up → sheet music |
+
+**Settings → Sheet music**:
+- **Practice only** (default)
+- **Play and Practice**
+- **Off**
+
+Press **N** during a song to show or hide it.
+
+To move from falling notes to reading the score, use "Notes rise" with sheet music on. The score then sits at the bottom of the screen, closest to the music on a real piano's stand. Your eyes can move from the notes to the staff as you get comfortable.
+
+How the flip works: each theme draws the playing field (notes, lanes, hit line, keyboard, sparks) as usual, then flips that region vertically. Text inside it (note names, bar numbers, octave labels) is drawn upright at its mirrored position. Score, stats and combo stay at the far end of the notes, away from where they land.
+
+Screenshots: `docs/screenshots/layout/`.
