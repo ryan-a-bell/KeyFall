@@ -13,8 +13,10 @@ from keyfall.renderer.skins import Skin, create_skin
 from keyfall.settings import (
     AppearanceSettings,
     DeviceSettings,
+    PracticeSettings,
     save_appearance,
     save_devices,
+    save_practice,
 )
 from keyfall.soundfont import SoundFontDownloader
 
@@ -24,6 +26,7 @@ class UIState:
     appearance: AppearanceSettings = field(default_factory=AppearanceSettings)
     accessibility: AccessibilitySettings = field(default_factory=AccessibilitySettings)
     devices: DeviceSettings = field(default_factory=DeviceSettings)
+    practice: PracticeSettings = field(default_factory=PracticeSettings)
     persist: bool = True  # False in tests / when settings shouldn't be written
     downloader: SoundFontDownloader = field(default_factory=SoundFontDownloader)
     skin: Skin = field(init=False)
@@ -64,3 +67,4 @@ class UIState:
             save_appearance(self.appearance)
             save_settings(self.accessibility)
             save_devices(self.devices)
+            save_practice(self.practice)

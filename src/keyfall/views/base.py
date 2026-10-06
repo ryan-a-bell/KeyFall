@@ -35,6 +35,7 @@ class ViewContext:
     songs_dir: str = ""
     audio_status: str = ""
     midi_output: Any = None  # MidiOutputHub: sound/lights sent to the keyboard
+    results: Any = None  # SessionResult for the results screen
     stem_folder: str = ""  # multi-stem song folder for the Stems screen
     next_view: str = ""  # where the Stems screen goes when you press Start
     ui: UIState | None = None  # shared by reference across context copies
@@ -165,6 +166,7 @@ class ViewManager:
             songs_dir=self._context.songs_dir,
             audio_status=self._context.audio_status,
             midi_output=self._context.midi_output,
+            results=self._context.results,
             stem_folder=self._context.stem_folder,
             next_view=self._context.next_view,
             ui=self._context.ui,
@@ -231,3 +233,19 @@ def _output_prefs(ctx: ViewContext) -> tuple[str, int]:
     if devices is None:
         return "accompaniment", 0
     return devices.output_mode, max(0, min(15, devices.light_channel - 1))
+
+
+def metronome_mode(ctx: ViewContext | None) -> str:
+    if ctx is None or ctx.ui is None:
+        return "count-in"
+    return ctx.ui.practice.metronome
+
+
+def best_accuracy(ctx: ViewContext | None, title: str) -> float | None:
+    if ctx is None or ctx.progress is None:
+        return None
+    try:
+        row = ctx.progress.get_best(title)
+    except Exception:
+        return None
+    return row["accuracy_pct"] if row else None

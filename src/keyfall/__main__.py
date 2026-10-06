@@ -6,7 +6,10 @@ import sys
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="KeyFall — piano learning game")
-    parser.add_argument("--songs-dir", default="", help="Directory containing MIDI/MusicXML files")
+    parser.add_argument(
+        "--songs-dir", default="",
+        help="Directory containing MIDI/MusicXML files (default: ~/KeyFall/Songs)",
+    )
     parser.add_argument("--soundfont", default=None, help="Path to a .sf2/.sf3 SoundFont")
     parser.add_argument(
         "--theme", choices=["classic", "studio", "neon"], default=None,

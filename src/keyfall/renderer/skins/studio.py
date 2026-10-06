@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import pygame
 
@@ -71,6 +72,7 @@ class StudioSkin(Skin):
         if frame.show_notation:
             self.draw_notation_panel(surface, frame, pygame.Rect(0, TOP_BAR, w, 170))
         self._draw_stats_card(surface, frame, pygame.Rect(w - 236, top + 16, 212, 150))
+        self.draw_count_in(surface, frame, area)
         if frame.paused:
             self._draw_paused(surface, frame, area)
 
@@ -91,8 +93,9 @@ class StudioSkin(Skin):
                 downbeat = b % per_bar == 0
                 pygame.draw.line(surface, (40, 45, 56) if downbeat else (24, 27, 34),
                                  (0, int(y)), (area.right, int(y)))
-                if downbeat:
-                    text(surface, self.ui(600, 11), str(b // per_bar + 1), p.faint,
+                if downbeat and b >= 0:
+                    first_bar = frame.loop[0] if frame.loop else 1  # real bar numbers in loops
+                    text(surface, self.ui(600, 11), str(b // per_bar + first_bar), p.faint,
                          (8, int(y) - 16))
 
     def _draw_notes(self, surface, frame: PlayFrame, layout: KeyLayout, area) -> None:
@@ -152,7 +155,8 @@ class StudioSkin(Skin):
 
         hands = {Hand.BOTH: "Both", Hand.RIGHT: "Right", Hand.LEFT: "Left"}[frame.active_hand]
         chips = [(f"{frame.tempo_scale:.0%}", "Tempo"),
-                 ("Wait" if frame.wait_mode else "Live", "Mode"), (hands, "Hands")]
+                 ("Wait" if frame.wait_mode else "Live", "Mode"), (hands, "Hands"),
+                 ({"off": "Off", "count-in": "Count-in", "on": "On"}[frame.metronome], "Click")]
         cx = w - 24
         for val, label in reversed(chips):
             fw = max(self.ui(700, 13).size(val)[0], self.ui(500, 10).size(label)[0]) + 22
@@ -304,14 +308,21 @@ class StudioSkin(Skin):
         x0 = 268
         text(surface, self.ui(700, 28), "Library", p.text, (x0, 28))
         count = f"{len(frame.songs)} song{'s' if len(frame.songs) != 1 else ''}"
+        if frame.songs_dir:
+            home = str(Path.home())
+            shown = frame.songs_dir.replace(home, "~", 1)
+            count += f"  ·  {shown}"
         text(surface, self.ui(400, 14), count, p.muted, (x0, 66))
-        chip = f"Hands: {frame.hand_split}"
-        cw = self.ui(500, 13).size(chip)[0] + 52
-        rrect(surface, p.line, (w - 32 - cw, 34, cw, 32), 16, width=1)
-        text(surface, self.ui(500, 13), chip, p.muted, (w - 32 - cw + 16, 50), "midleft")
-        k = pygame.Rect(w - 32 - 30, 40, 20, 20)
-        rrect(surface, p.line, k, 5)
-        text(surface, self.ui(600, 11), "H", p.text, k.center, "center")
+        cx = w - 32
+        for chip, key in ((f"Hands: {frame.hand_split}", "H"), ("Open songs folder", "O")):
+            cw = self.ui(500, 13).size(chip)[0] + 52
+            cx -= cw
+            rrect(surface, p.line, (cx, 34, cw, 32), 16, width=1)
+            text(surface, self.ui(500, 13), chip, p.muted, (cx + 16, 50), "midleft")
+            k = pygame.Rect(cx + cw - 30, 40, 20, 20)
+            rrect(surface, p.line, k, 5)
+            text(surface, self.ui(600, 11), key, p.text, k.center, "center")
+            cx -= 10
 
         if not frame.songs:
             card = pygame.Rect(x0, 110, w - x0 - 32, 150)
@@ -319,7 +330,7 @@ class StudioSkin(Skin):
             rrect(surface, p.line, card, 14, width=1)
             text(surface, self.ui(700, 20), "No songs yet", p.text, (card.x + 28, card.y + 30))
             text(surface, self.ui(400, 14),
-                 "Start KeyFall with --songs-dir PATH to load a folder of MIDI or MusicXML files.",
+                 "Press O to open your songs folder, then drop in MIDI, MusicXML or Suno stems.",
                  p.muted, (card.x + 28, card.y + 66))
             text(surface, self.ui(400, 14), "Press Tab to switch to Free Play.", p.muted,
                  (card.x + 28, card.y + 92))

@@ -115,6 +115,10 @@ class MenuView:
             self._details.clear()
         elif event.key == pygame.K_s:
             return ViewAction(kind="push", target="settings")
+        elif event.key == pygame.K_o and self._context and self._context.songs_dir:
+            from keyfall.library import open_folder
+            folder = self._context.songs_dir
+            self._error = "" if open_folder(folder) else f"Could not open {folder}"
         elif event.key == pygame.K_RETURN:
             return self._launch()
 

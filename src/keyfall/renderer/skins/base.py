@@ -23,9 +23,11 @@ from keyfall.renderer.skins.frames import (
     FreePlayFrame,
     MenuFrame,
     PlayFrame,
+    ResultsFrame,
     SettingsFrame,
     SettingsRow,
     StemsFrame,
+    grade_letter,
 )
 from keyfall.renderer.skins.keys import KeyLayout, NoteIndex, fit_range, is_black, note_name
 from keyfall.renderer.theme import Theme
@@ -242,12 +244,18 @@ class Skin:
         text(surface, self.ui(400, 15), "Changes apply instantly and are saved automatically.",
              p.muted, (60, 86))
 
-        y = 120
+        y = top = 120
         n = len(frame.rows)
         row_h, gap = (68, 10) if n <= 6 else (58, 6) if n <= 8 else (52, 5)
-        for i, row in enumerate(frame.rows):
-            r = self._draw_row(surface, row, i == frame.selected, 48, y, 560, row_h)
+        visible = max(1, (h - top - 50) // (row_h + gap))
+        start = max(0, min(frame.selected - visible // 2, n - visible))
+        for i in range(start, min(n, start + visible)):
+            r = self._draw_row(surface, frame.rows[i], i == frame.selected, 48, y, 560, row_h)
             y = r.bottom + gap
+        if start > 0:
+            chevron(surface, p.muted, (328, top - 9), 6, "up")
+        if start + visible < n:
+            chevron(surface, p.muted, (328, y + 4), 6, "down")
 
         # Live preview of the selected theme
         pv = pygame.Rect(650, 130, w - 650 - 48, 0)
@@ -265,6 +273,124 @@ class Skin:
 
         hints = "Up/Down: choose setting   Left/Right: change   Esc: back"
         text(surface, self.ui(500, 13), hints, p.faint, (60, h - 34))
+
+    # ------------------------------------------------------------ shared overlays
+    def draw_grade(self, surface: pygame.Surface, letter: str, center, size: int) -> None:
+        """Big grade letter; skins can override for effects (Neon glows)."""
+        color = self.p.gold if letter == "S" else self.p.accent if letter in "AB" else self.p.text
+        text(surface, self.display(900, size), letter, color, center, "center")
+
+    def draw_count_in(self, surface: pygame.Surface, frame: PlayFrame,
+                      area: pygame.Rect) -> None:
+        """Large "4 3 2 1" during the count-in bar."""
+        if frame.count_in is None or frame.count_in <= 0:
+            return
+        box = pygame.Rect(0, 0, 150, 150)
+        box.center = area.center
+        rrect(surface, self.p.bg, box, 75, alpha=170)
+        rrect(surface, self.p.accent, box, 75, alpha=200, width=3)
+        text(surface, self.display(800, 72), str(frame.count_in), self.p.text, box.center,
+             "center")
+        text(surface, self.ui(600, 14), "Get ready", self.p.muted, (box.centerx, box.bottom + 16),
+             "center")
+
+    def draw_results(self, surface: pygame.Surface, frame: ResultsFrame) -> None:
+        p = self.p
+        w, h = surface.get_size()
+        r = frame.result
+        st = r.stats
+        self.draw_backdrop(surface)
+        tracked(surface, self.label(700, 13), f"{r.mode.upper()} COMPLETE", p.muted, (60, 40), 2)
+        title = r.title if len(r.title) < 48 else r.title[:46] + "…"
+        text(surface, self.display(800, 32), title, p.text, (60, 62))
+
+        # grade card
+        card = pygame.Rect(60, 128, 360, 330)
+        rrect(surface, p.panel, card, 16, alpha=235)
+        letter = grade_letter(st.accuracy_pct, st.total_notes)
+        self.draw_grade(surface, letter, (card.centerx, card.y + 100), 120)
+        acc = f"{st.accuracy_pct:.1f}%" if st.total_notes else "—"
+        text(surface, self.display(800, 36), acc, p.text, (card.centerx, card.y + 200), "center")
+        text(surface, self.ui(500, 14), "accuracy", p.muted, (card.centerx, card.y + 230), "center")
+        if r.best_before is None:
+            line, color = "First time playing this song", p.muted
+        elif st.accuracy_pct > r.best_before + 0.05:
+            line, color = f"New best!  +{st.accuracy_pct - r.best_before:.1f}%", p.good
+        else:
+            line, color = f"Best {r.best_before:.1f}%", p.muted
+        text(surface, self.ui(700, 16), line, color, (card.centerx, card.y + 272), "center")
+        text(surface, self.ui(500, 14), f"Longest streak {st.max_streak}", p.muted,
+             (card.centerx, card.y + 298), "center")
+
+        # hit breakdown
+        x0 = 460
+        tracked(surface, self.label(700, 12), "NOTES", p.muted, (x0, 130), 2)
+        total = max(1, st.total_notes)
+        rows = [("Perfect", st.perfect, p.good), ("Good", st.good, p.accent),
+                ("OK", st.ok, p.gold), ("Missed", st.missed, p.miss)]
+        bar_w = w - x0 - 60 - 160
+        for i, (label, count, color) in enumerate(rows):
+            y = 156 + i * 34
+            text(surface, self.ui(600, 15), label, p.text, (x0, y))
+            track = pygame.Rect(x0 + 90, y + 4, bar_w, 12)
+            rrect(surface, p.panel2, track, 6)
+            rrect(surface, color, (track.x, track.y, int(track.w * count / total), track.h), 6)
+            text(surface, self.ui(700, 15), str(count), p.text, (track.right + 16, y))
+
+        # timing histogram
+        tracked(surface, self.label(700, 12), "TIMING", p.muted, (x0, 304), 2)
+        bins = [0] * 21
+        for off in r.timing_offsets_ms:
+            bins[max(0, min(20, int((off + 210) / 20)))] += 1
+        peak = max(bins) or 1
+        hist = pygame.Rect(x0, 328, w - x0 - 60, 90)
+        bw = hist.w / len(bins)
+        for i, v in enumerate(bins):
+            bh = max(2, int(hist.h * v / peak)) if v else 2
+            color = p.good if 7 <= i <= 13 else p.muted
+            rrect(surface, color, (int(hist.x + i * bw + 2), hist.bottom - bh, int(bw - 4), bh), 3)
+        pygame.draw.line(surface, p.line, (hist.centerx, hist.y), (hist.centerx, hist.bottom))
+        text(surface, self.ui(500, 12), "early", p.faint, (hist.x, hist.bottom + 6))
+        text(surface, self.ui(500, 12), "on time", p.faint, (hist.centerx, hist.bottom + 6),
+             "midtop")
+        text(surface, self.ui(500, 12), "late", p.faint, (hist.right, hist.bottom + 6),
+             "topright")
+        if r.timing_offsets_ms:
+            avg = sum(r.timing_offsets_ms) / len(r.timing_offsets_ms)
+            lean = "on time" if abs(avg) < 15 else ("late" if avg > 0 else "early")
+            text(surface, self.ui(500, 13), f"Average {abs(avg):.0f} ms {lean}", p.muted,
+                 (hist.right, 304), "topright")
+
+        # trouble spot
+        trouble = r.trouble
+        tip_y = 478
+        if trouble:
+            tip = f"Most misses in bars {trouble[0]}–{trouble[1]} ({trouble[2]} missed)."
+            tip += " A short loop there is the fastest way to improve."
+        elif st.total_notes and st.missed == 0:
+            tip = "No missed notes. Try a faster tempo next time."
+        else:
+            tip = ""
+        if tip:
+            text(surface, self.ui(500, 15), tip, p.text, (60, tip_y))
+
+        # buttons
+        bx = 60
+        for i, label in enumerate(frame.buttons):
+            f = self.ui(700, 16)
+            bw2 = f.size(label)[0] + 48
+            btn = pygame.Rect(bx, h - 150, bw2, 50)
+            if i == frame.selected:
+                rrect(surface, p.accent, btn, 25)
+                text(surface, f, label, (255, 255, 255), btn.center, "center")
+            else:
+                rrect(surface, p.line, btn, 25, width=2)
+                text(surface, f, label, p.text, btn.center, "center")
+            bx = btn.right + 14
+        hints = "Left/Right: choose   Enter: go   R: play again"
+        if any(b.startswith("Practice") for b in frame.buttons):
+            hints += "   P: practice bars"
+        text(surface, self.ui(500, 13), hints + "   Esc: menu", p.faint, (60, h - 60))
 
     def draw_stems(self, surface: pygame.Surface, frame: StemsFrame) -> None:
         p = self.p

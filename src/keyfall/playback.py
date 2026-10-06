@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from keyfall.models import PERCUSSION, Hand, NoteEvent, Song
@@ -367,3 +368,71 @@ class SongOutputs:
         for target in (audio, midi_out):
             if target is not None:
                 target.all_notes_off()
+
+
+def beat_length(song: Song) -> float:
+    """Seconds per beat at the song's opening tempo."""
+    bpm = song.tempo_changes[0].bpm if song.tempo_changes else 120.0
+    return 60.0 / bpm if bpm > 0 else 0.5
+
+
+BEATS_PER_BAR = 4  # matches select_section's default bar math
+
+
+def bar_of(time_s: float, song: Song, first_bar: int = 1) -> int:
+    """1-based bar number containing ``time_s`` (4/4 at the opening tempo)."""
+    return int(max(0.0, time_s) // (beat_length(song) * BEATS_PER_BAR)) + first_bar
+
+
+class ClickTrack:
+    """Metronome clicks locked to song position (so wait mode and tempo just work).
+
+    ``mode``: "off", "count-in" (only the bar before the song starts, where the
+    position is negative), or "on" (every beat). Downbeats are accented.
+    """
+
+    DOWNBEAT = (76, 110)  # GM hi wood block
+    BEAT = (77, 80)  # GM low wood block
+    CHANNEL = 9
+
+    def __init__(self) -> None:
+        self._prev: float | None = None
+        self._kit: dict[int, bool] = {}  # id(audio) -> drum kit available
+
+    def reset(self) -> None:
+        self._prev = None
+
+    def update(self, position: float, beat: float, mode: str) -> list[tuple[int, int]]:
+        if mode == "off" or beat <= 0:
+            self._prev = position
+            return []
+        prev = self._prev
+        self._prev = position
+        if prev is None or position < prev:  # start / restart: include a beat landing now
+            prev = position - 1e-6
+        clicks = []
+        first = math.floor(prev / beat) + 1
+        last = math.floor(position / beat + 1e-9)
+        for k in range(first, last + 1):
+            if mode == "count-in" and k >= 0:
+                continue
+            clicks.append(self.DOWNBEAT if k % BEATS_PER_BAR == 0 else self.BEAT)
+        return clicks
+
+    def play(self, audio, clicks: list[tuple[int, int]]) -> None:
+        if audio is None or not clicks:
+            return
+        has_kit = self._kit.get(id(audio))
+        if has_kit is None:
+            has_kit = self._kit[id(audio)] = audio.set_instrument(self.CHANNEL, 0, bank=128) \
+                is not False
+        for pitch, velocity in clicks:
+            if has_kit:
+                audio.play_note_event(NoteEvent(pitch, 0.0, 0.08, velocity), channel=self.CHANNEL)
+            else:  # piano-only sound: a short high note instead of a wood block
+                audio.play_note_event(NoteEvent(pitch + 20, 0.0, 0.06, velocity // 2), channel=0)
+
+
+def count_in_seconds(song: Song, mode: str) -> float:
+    """How far before the song to start: one bar, unless the metronome is off."""
+    return 0.0 if mode == "off" else beat_length(song) * BEATS_PER_BAR

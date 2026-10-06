@@ -30,6 +30,14 @@ class DeviceSettings:
     light_channel: int = 1  # MIDI channel (1-16) for key-light notes
 
 
+@dataclass
+class PracticeSettings:
+    metronome: str = "count-in"  # "off", "count-in" (one bar before playing), or "on"
+
+
+METRONOME_MODES = ("off", "count-in", "on")
+
+
 def _read_all(path: Path) -> dict[str, Any]:
     try:
         data = json.loads(path.read_text())
@@ -76,3 +84,14 @@ def load_devices(path: Path | None = None) -> DeviceSettings:
 
 def save_devices(settings: DeviceSettings, path: Path | None = None) -> None:
     save_section("devices", settings, path)
+
+
+def load_practice(path: Path | None = None) -> PracticeSettings:
+    settings = load_section("practice", PracticeSettings, path)
+    if settings.metronome not in METRONOME_MODES:
+        settings.metronome = "count-in"
+    return settings
+
+
+def save_practice(settings: PracticeSettings, path: Path | None = None) -> None:
+    save_section("practice", settings, path)

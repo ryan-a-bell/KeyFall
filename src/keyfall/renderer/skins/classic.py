@@ -52,6 +52,9 @@ class ClassicSkin(Skin):
 
         self.draw_keyboard(surface, layout, self.pressed_hands(frame, layout))
 
+        if frame.count_in:
+            text(surface, self.ui(700, 96), str(frame.count_in), p.text, (w // 2, kb_y // 2),
+                 "center")
         hud = self.ui(500, 20)
         score = frame.stats.perfect * 3 + frame.stats.good * 2 + frame.stats.ok
         for i, line in enumerate((f"Score: {score}", f"Streak: {frame.streak}",
@@ -90,8 +93,8 @@ class ClassicSkin(Skin):
                 if y > h - 100:
                     break
         else:
-            text(surface, f, "No songs found. Start with --songs-dir PATH.", p.miss, (40, 180))
+            text(surface, f, "No songs found. Press O to open the songs folder.", p.miss, (40, 180))
         if frame.error:
             text(surface, f, frame.error, p.miss, (40, h - 70))
-        text(surface, f, "Up/Down: select | Enter: launch | Tab: mode | H: hands | S: settings",
-             p.muted, (40, h - 40))
+        legend = "Up/Down: select | Enter: launch | Tab: mode | H: hands | O: folder | S: settings"
+        text(surface, f, legend, p.muted, (40, h - 40))

@@ -47,6 +47,8 @@ class PlayFrame:
     hit_results: dict | None = None
     hints: str = ""
     clock: float = 0.0  # seconds since the view opened (for animation)
+    count_in: int | None = None  # beats left before the song starts (shown big)
+    metronome: str = "off"  # off | count-in | on
 
     @property
     def progress(self) -> float:
@@ -127,3 +129,32 @@ class StemsFrame:
     song: Song | None = None  # combined result, for the piano-roll preview
     summary: list[str] = field(default_factory=list)
     message: str = ""
+
+
+@dataclass
+class SessionResult:
+    """What happened in one play-through, for the results screen."""
+
+    title: str
+    mode: str  # "Play" or "Practice"
+    stats: SessionStats
+    timing_offsets_ms: list[float] = field(default_factory=list)
+    best_before: float | None = None  # best accuracy before this run
+    miss_bars: dict[int, int] = field(default_factory=dict)  # bar -> misses
+
+    @property
+    def trouble(self) -> tuple[int, int, int] | None:
+        """The two-bar stretch with the most misses: (first_bar, last_bar, misses)."""
+        if not self.miss_bars:
+            return None
+        best = max(self.miss_bars, key=lambda b: (self.miss_bars[b] + self.miss_bars.get(b + 1, 0),
+                                                  -b))
+        return best, best + 1, self.miss_bars[best] + self.miss_bars.get(best + 1, 0)
+
+
+@dataclass
+class ResultsFrame:
+    result: SessionResult
+    buttons: list[str]
+    selected: int
+    clock: float = 0.0

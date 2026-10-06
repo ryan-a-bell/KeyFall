@@ -2,14 +2,31 @@
 
 from __future__ import annotations
 
+import math
+from collections import Counter
+
 import pygame
 
 from keyfall.accessibility import NoteLabelMode
 from keyfall.evaluator import evaluate_hit
 from keyfall.models import Hand, HitGrade, NoteEvent, SessionStats, Song
-from keyfall.playback import PlaybackEngine, SongOutputs
-from keyfall.renderer.skins.frames import PlayFrame
-from keyfall.views.base import ViewAction, ViewContext, stop_outputs, update_outputs
+from keyfall.playback import (
+    ClickTrack,
+    PlaybackEngine,
+    SongOutputs,
+    bar_of,
+    beat_length,
+    count_in_seconds,
+)
+from keyfall.renderer.skins.frames import PlayFrame, SessionResult
+from keyfall.views.base import (
+    ViewAction,
+    ViewContext,
+    best_accuracy,
+    metronome_mode,
+    stop_outputs,
+    update_outputs,
+)
 
 
 class WaterfallView:
@@ -28,6 +45,8 @@ class WaterfallView:
         self._judgement_at: float = -99.0
         self._offsets: list[float] = []
         self._outputs: SongOutputs | None = None
+        self._click = ClickTrack()
+        self._miss_bars: Counter[int] = Counter()
 
     def on_enter(self, context: ViewContext) -> None:
         self._context = context
@@ -38,12 +57,14 @@ class WaterfallView:
         self._engine.set_tempo_scale(context.tempo_scale)
         self._engine.active_hand = context.hand
         self._stats = SessionStats(song_title=song.title)
+        self._start_position()
         self._streak = 0
         self._pressed = set()
         self._pending_notes = []
         self._clock = 0.0
         self._judgement = None
         self._offsets = []
+        self._miss_bars = Counter()
 
     def on_exit(self) -> None:
         stop_outputs(self._context, self._outputs)
@@ -69,8 +90,8 @@ class WaterfallView:
         elif event.key == pygame.K_w:
             engine.wait_mode = not engine.wait_mode
         elif event.key == pygame.K_r:
-            engine.position = 0.0
-            engine.note_index = 0
+            self._start_position()
+            self._pending_notes = []
         elif event.key == pygame.K_MINUS or event.key == pygame.K_KP_MINUS:
             engine.set_tempo_scale(engine.tempo_scale - 0.05)
         elif event.key == pygame.K_EQUALS or event.key == pygame.K_KP_PLUS:
@@ -114,6 +135,9 @@ class WaterfallView:
         newly_active = engine.update(dt, self._pressed)
         # auto-played hand, backing tracks, key lights (synth and/or keyboard)
         self._outputs = update_outputs(self._context, self._outputs, engine, newly_active)
+        clicks = self._click.update(engine.position, beat_length(engine.song),
+                                    metronome_mode(self._context))
+        self._click.play(self._context.audio if self._context else None, clicks)
 
         # Evaluate hits
         for note in newly_active:
@@ -127,10 +151,10 @@ class WaterfallView:
             if age > 0.3:  # missed
                 self._stats.missed += 1
                 self._streak = 0
-                self._judge(HitGrade.MISS)
+                self._judge(HitGrade.MISS, note=note)
             elif note.pitch in self._pressed:
                 result = evaluate_hit(note, note.pitch, engine.position)
-                self._judge(result.grade, result.timing_offset_ms)
+                self._judge(result.grade, result.timing_offset_ms, note)
                 if result.grade == HitGrade.PERFECT:
                     self._stats.perfect += 1
                     self._streak += 1
@@ -151,16 +175,42 @@ class WaterfallView:
         self._pending_notes = still_pending
 
         if engine.finished and not self._pending_notes:
-            return ViewAction(kind="pop")
+            return self._results()
 
         return None
 
-    def _judge(self, grade: HitGrade, offset_ms: float | None = None) -> None:
+    def _judge(self, grade: HitGrade, offset_ms: float | None = None,
+               note: NoteEvent | None = None) -> None:
         self._judgement = grade
         self._judgement_at = self._clock
+        if grade == HitGrade.MISS and note is not None and self._engine is not None:
+            self._miss_bars[bar_of(note.start_time, self._engine.song, self._first_bar())] += 1
         if offset_ms is not None:
             self._offsets.append(offset_ms)
             del self._offsets[:-300]
+
+    def _first_bar(self) -> int:
+        return 1
+
+    def _start_position(self) -> None:
+        """Rewind to one bar before the song so the count-in clicks lead into it."""
+        engine = self._engine
+        engine.position = -count_in_seconds(engine.song, metronome_mode(self._context))
+        engine.note_index = 0
+        self._click.reset()
+
+    def _results(self) -> ViewAction:
+        self._update_accuracy()
+        title = self._stats.song_title
+        result = SessionResult(
+            title=title, mode="Play",
+            stats=self._stats, timing_offsets_ms=list(self._offsets),
+            best_before=best_accuracy(self._context, title), miss_bars=dict(self._miss_bars),
+        )
+        song = self._full_song if hasattr(self, "_full_song") else self._engine.song
+        return ViewAction(kind="switch", target="results",
+                          context_patch={"results": result, "song": song,
+                                         "next_view": "waterfall"})
 
     def _update_accuracy(self) -> None:
         hit = self._stats.perfect + self._stats.good + self._stats.ok
@@ -190,4 +240,7 @@ class WaterfallView:
             timing_offsets_ms=self._offsets,
             hints="Space: pause | W: wait | +/-: tempo | 1/2/3: hands | R: restart | Esc: menu",
             clock=self._clock,
+            count_in=(math.ceil(-engine.position / beat_length(engine.song) - 1e-6)
+                      if engine.position < 0 else None),
+            metronome=metronome_mode(ctx),
         ))

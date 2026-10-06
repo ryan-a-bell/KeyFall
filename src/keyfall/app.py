@@ -6,13 +6,15 @@ import pygame
 
 from keyfall.accessibility import load_settings
 from keyfall.config import FPS, WINDOW_HEIGHT, WINDOW_TITLE, WINDOW_WIDTH
+from keyfall.library import prepare_songs_dir
 from keyfall.midi_input import KeyboardInput
-from keyfall.settings import load_appearance, load_devices
+from keyfall.settings import load_appearance, load_devices, load_practice
 from keyfall.ui_state import UIState
 from keyfall.views.base import ViewContext, ViewManager
 from keyfall.views.freeplay_view import FreePlayView
 from keyfall.views.menu_view import MenuView
 from keyfall.views.practice_view import PracticeView
+from keyfall.views.results_view import ResultsView
 from keyfall.views.settings_view import SettingsView
 from keyfall.views.stems_view import StemsView
 from keyfall.views.waterfall_view import WaterfallView
@@ -33,6 +35,10 @@ class App:
         plugin_manager = self._try_plugins()
         self._keyboard_input = KeyboardInput()
         ui = self._load_ui(theme)
+        try:
+            songs_dir = str(prepare_songs_dir(songs_dir or None))
+        except OSError:
+            pass  # read-only home etc.: run with whatever folder was given
         midi_input = self._open_midi(ui.devices.midi_input)
         midi_output = self._open_midi_output(ui.devices.midi_output)
 
@@ -58,6 +64,7 @@ class App:
         self.views.register(FreePlayView)
         self.views.register(SettingsView)
         self.views.register(StemsView)
+        self.views.register(ResultsView)
 
         # Register plugin views
         if plugin_manager:
@@ -145,7 +152,7 @@ class App:
         if theme:
             appearance.theme = theme
         return UIState(appearance=appearance, accessibility=accessibility,
-                       devices=load_devices())
+                       devices=load_devices(), practice=load_practice())
 
     @staticmethod
     def _try_progress():

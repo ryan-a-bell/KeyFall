@@ -288,6 +288,11 @@ class NeonSkin(Skin):
         pygame.draw.rect(surface, p.bg, gm.inflate(2, 2), 2, border_radius=7)
         text(surface, self.label(700, 13), "GROOVE", p.muted, (gm.centerx, gm.bottom + 8), "midtop")
 
+        if frame.count_in:
+            self.glow_text(surface, self.display(900, 110), str(frame.count_in), p.accent2,
+                           (w // 2, hit_y // 2 + 20), strength=2)
+            tracked(surface, self.label(700, 20), "GET READY", p.muted,
+                    (w // 2, hit_y // 2 + 90), 6, "midtop")
         if frame.paused:
             self._draw_paused(surface, frame, hit_y)
 
@@ -308,6 +313,10 @@ class NeonSkin(Skin):
             text(surface, self.label(700, 15), k, p.text, (x + kw // 2, 313), "center")
             r = text(surface, self.label(600, 15), label, p.muted, (x + kw + 8, 304))
             x = r.right + 22
+
+    def draw_grade(self, surface, letter: str, center, size: int) -> None:
+        color = self.p.gold if letter == "S" else self.p.accent if letter in "AB" else self.p.text
+        self.glow_text(surface, self.display(900, size), letter, color, center, strength=2)
 
     def draw_keyboard(self, surface, layout: KeyLayout, pressed: dict[int, Hand]) -> None:
         w = surface.get_width()
@@ -403,7 +412,7 @@ class NeonSkin(Skin):
         else:
             text(surface, self.label(700, 26), "NO SONGS LOADED", p.text, (w // 2, cy - 20),
                  "center")
-            text(surface, self.label(600, 17), "START KEYFALL WITH --songs-dir PATH", p.muted,
+            text(surface, self.label(600, 17), "PRESS O TO OPEN YOUR SONGS FOLDER", p.muted,
                  (w // 2, cy + 14), "center")
 
         # play button
@@ -433,9 +442,10 @@ class NeonSkin(Skin):
         if frame.error:
             text(surface, self.label(600, 15), frame.error, p.miss, (w // 2, 628), "center")
 
-        hx = w // 2 - 330
+        hx = w // 2 - 380
         for key, label in (("ARROWS", "SELECT"), ("ENTER", "START"), ("TAB", "MODE"),
-                           ("H", "HANDS"), ("S", "SETTINGS"), ("ESC", "QUIT")):
+                           ("H", "HANDS"), ("O", "FOLDER"), ("S", "SETTINGS"),
+                           ("ESC", "QUIT")):
             kw = self.label(700, 15).size(key)[0] + 18
             rrect(surface, (255, 255, 255), (hx, 660, kw, 26), 6, alpha=28)
             rrect(surface, p.muted, (hx, 660, kw, 26), 6, alpha=120, width=1)

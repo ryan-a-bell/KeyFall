@@ -15,7 +15,7 @@ from keyfall.renderer.skins import create_skin
 from keyfall.renderer.skins.demo import demo_frame, demo_song
 from keyfall.renderer.skins.frames import SettingsFrame, SettingsRow
 from keyfall.renderer.theme import THEME_ORDER, THEMES
-from keyfall.settings import EFFECT_LEVELS
+from keyfall.settings import EFFECT_LEVELS, METRONOME_MODES
 from keyfall.soundfont import GM_DOWNLOAD, PIANO_DOWNLOAD, installed_path
 from keyfall.views.base import ViewAction, ViewContext
 
@@ -38,9 +38,10 @@ _PALETTE_NAMES = {
     ColorPalette.MONOCHROME: "Monochrome",
 }
 
-(ROW_THEME, ROW_EFFECTS, ROW_LABELS, ROW_COLORS, ROW_MIDI, ROW_OUT, ROW_OUT_MODE,
- ROW_PIANO, ROW_GM, ROW_DONE) = range(10)
-ROW_COUNT = 10
+(ROW_THEME, ROW_EFFECTS, ROW_LABELS, ROW_COLORS, ROW_METRONOME, ROW_MIDI, ROW_OUT,
+ ROW_OUT_MODE, ROW_PIANO, ROW_GM, ROW_DONE) = range(11)
+ROW_COUNT = 11
+_METRONOME_NAMES = {"off": "Off", "count-in": "Count-in only", "on": "Always"}
 _DOWNLOAD_ROWS = {ROW_PIANO: PIANO_DOWNLOAD, ROW_GM: GM_DOWNLOAD}
 _OUT_MODE_NAMES = {MODE_ACCOMPANIMENT: "Accompaniment", MODE_LIGHTS: "Key lights",
                    MODE_BOTH: "Both"}
@@ -145,6 +146,8 @@ class SettingsView:
             acc.note_labels = _cycle(_LABEL_OPTIONS, acc.get_label_mode(), step).name
         elif row == ROW_COLORS:
             acc.color_palette = _cycle(_PALETTES, acc.get_palette(), step).name
+        elif row == ROW_METRONOME:
+            ui.practice.metronome = _cycle(list(METRONOME_MODES), ui.practice.metronome, step)
         elif row == ROW_MIDI:
             self._change_midi(step)
         elif row == ROW_OUT:
@@ -192,6 +195,8 @@ class SettingsView:
                         "Show note names on the falling notes"),
             SettingsRow("Hand colors", _PALETTE_NAMES[acc.get_palette()],
                         "Colorblind-friendly palettes override the theme"),
+            SettingsRow("Metronome", _METRONOME_NAMES[ui.practice.metronome],
+                        "Count-in bar before each song or loop; Always clicks every beat"),
             self._midi_row(),
             *self._output_rows(),
             self._download_row(PIANO_DOWNLOAD, "Grand piano for your playing (CC-BY 3.0)"),
