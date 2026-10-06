@@ -7,7 +7,7 @@ import pygame
 from keyfall.accessibility import NoteLabelMode
 from keyfall.evaluator import evaluate_hit
 from keyfall.models import Hand, HitGrade, NoteEvent, SessionStats, Song
-from keyfall.playback import PlaybackEngine, select_section
+from keyfall.playback import BackingPlayer, PlaybackEngine, select_section
 from keyfall.renderer.skins.frames import PlayFrame
 from keyfall.views.base import ViewAction, ViewContext
 
@@ -28,6 +28,7 @@ class PracticeView:
         self._judgement: HitGrade | None = None
         self._judgement_at: float = -99.0
         self._offsets: list[float] = []
+        self._backing: BackingPlayer | None = None
         self._show_notation: bool = True
         self._looping: bool = False
         self._section_start: int = 1
@@ -141,6 +142,11 @@ class PracticeView:
                             self._context.audio.note_off(evt.pitch)
 
         newly_active = engine.update(dt, self._pressed)
+        if self._backing is None or self._backing.notes is not engine.song.backing:
+            self._backing = BackingPlayer(engine.song)
+        self._backing.update(engine.position, self._context.audio if self._context else None)
+        if self._context and self._context.audio:
+            self._context.audio.flush_pending_offs()  # release auto-played notes
 
         for note in newly_active:
             if engine.active_hand == Hand.BOTH or note.hand == engine.active_hand:

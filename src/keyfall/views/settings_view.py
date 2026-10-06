@@ -9,6 +9,7 @@ from __future__ import annotations
 import pygame
 
 from keyfall.accessibility import ColorPalette, NoteLabelMode
+from keyfall.midi_input import AUTO, NONE
 from keyfall.renderer.skins import create_skin
 from keyfall.renderer.skins.demo import demo_frame, demo_song
 from keyfall.renderer.skins.frames import SettingsFrame, SettingsRow
@@ -35,7 +36,8 @@ _PALETTE_NAMES = {
     ColorPalette.MONOCHROME: "Monochrome",
 }
 
-ROW_THEME, ROW_EFFECTS, ROW_LABELS, ROW_COLORS, ROW_DONE = range(5)
+ROW_THEME, ROW_EFFECTS, ROW_LABELS, ROW_COLORS, ROW_MIDI, ROW_DONE = range(6)
+ROW_COUNT = 6
 
 
 def _cycle(options: list, current, step: int):
@@ -58,6 +60,28 @@ class SettingsView:
     def on_enter(self, context: ViewContext) -> None:
         self._context = context
         context.skin  # ensure a UIState exists
+        self._ports: list[str] = self._scan_ports()
+
+    def _hub(self):
+        hub = self._context.midi_input if self._context else None
+        return hub if hasattr(hub, "select") else None
+
+    def _scan_ports(self) -> list[str]:
+        hub = self._hub()
+        return hub.ports() if hub else []
+
+    def _change_midi(self, step: int) -> None:
+        hub = self._hub()
+        ui = self._context.ui
+        if hub is None or ui is None:
+            return
+        self._ports = self._scan_ports()  # rescan so newly plugged keyboards appear
+        options = [AUTO, *self._ports, NONE]
+        current = ui.devices.midi_input
+        if current not in options:  # saved device currently unplugged
+            options.insert(1, current)
+        ui.devices.midi_input = _cycle(options, current, step)
+        hub.select(ui.devices.midi_input)
 
     def on_exit(self) -> None:
         pass
@@ -69,9 +93,9 @@ class SettingsView:
         if event.key in (pygame.K_ESCAPE, pygame.K_s):
             return ViewAction(kind="pop")
         if event.key == pygame.K_UP:
-            self._selected = (self._selected - 1) % 5
+            self._selected = (self._selected - 1) % ROW_COUNT
         elif event.key in (pygame.K_DOWN, pygame.K_TAB):
-            self._selected = (self._selected + 1) % 5
+            self._selected = (self._selected + 1) % ROW_COUNT
         elif event.key in (pygame.K_LEFT, pygame.K_RIGHT):
             self.change(self._selected, -1 if event.key == pygame.K_LEFT else 1)
         elif event.key == pygame.K_RETURN:
@@ -93,6 +117,8 @@ class SettingsView:
             acc.note_labels = _cycle(_LABEL_OPTIONS, acc.get_label_mode(), step).name
         elif row == ROW_COLORS:
             acc.color_palette = _cycle(_PALETTES, acc.get_palette(), step).name
+        elif row == ROW_MIDI:
+            self._change_midi(step)
         else:
             return
         try:
@@ -118,8 +144,24 @@ class SettingsView:
                         "Show note names on the falling notes"),
             SettingsRow("Hand colors", _PALETTE_NAMES[acc.get_palette()],
                         "Colorblind-friendly palettes override the theme"),
+            self._midi_row(),
             SettingsRow("Done", "", "", adjustable=False),
         ]
+
+    def _midi_row(self) -> SettingsRow:
+        hub = self._hub()
+        choice = self._context.ui.devices.midi_input
+        value = {AUTO: "Auto", NONE: "Off (computer keys)"}.get(choice, choice)
+        if hub is None:
+            status = "MIDI unavailable"
+        elif hub.connected:
+            status = f"Connected: {hub.port_name}"
+        elif choice == NONE:
+            status = "Using the computer keyboard"
+        else:
+            found = len(self._ports)
+            status = hub.error or f"{found} device{'s' if found != 1 else ''} found"
+        return SettingsRow("MIDI keyboard", value, status)
 
     def _preview_surface(self) -> pygame.Surface:
         """Render the current settings onto a demo song (cached until settings change)."""

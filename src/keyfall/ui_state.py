@@ -10,13 +10,19 @@ from dataclasses import dataclass, field
 
 from keyfall.accessibility import AccessibilitySettings, save_settings
 from keyfall.renderer.skins import Skin, create_skin
-from keyfall.settings import AppearanceSettings, save_appearance
+from keyfall.settings import (
+    AppearanceSettings,
+    DeviceSettings,
+    save_appearance,
+    save_devices,
+)
 
 
 @dataclass
 class UIState:
     appearance: AppearanceSettings = field(default_factory=AppearanceSettings)
     accessibility: AccessibilitySettings = field(default_factory=AccessibilitySettings)
+    devices: DeviceSettings = field(default_factory=DeviceSettings)
     persist: bool = True  # False in tests / when settings shouldn't be written
     skin: Skin = field(init=False)
 
@@ -33,3 +39,4 @@ class UIState:
         if self.persist:
             save_appearance(self.appearance)
             save_settings(self.accessibility)
+            save_devices(self.devices)

@@ -7,7 +7,7 @@ import pygame
 from keyfall.accessibility import NoteLabelMode
 from keyfall.evaluator import evaluate_hit
 from keyfall.models import Hand, HitGrade, NoteEvent, SessionStats, Song
-from keyfall.playback import PlaybackEngine
+from keyfall.playback import BackingPlayer, PlaybackEngine
 from keyfall.renderer.skins.frames import PlayFrame
 from keyfall.views.base import ViewAction, ViewContext
 
@@ -27,6 +27,7 @@ class WaterfallView:
         self._judgement: HitGrade | None = None
         self._judgement_at: float = -99.0
         self._offsets: list[float] = []
+        self._backing: BackingPlayer | None = None
 
     def on_enter(self, context: ViewContext) -> None:
         self._context = context
@@ -109,6 +110,11 @@ class WaterfallView:
 
         # Advance playback
         newly_active = engine.update(dt, self._pressed)
+        if self._backing is None or self._backing.notes is not engine.song.backing:
+            self._backing = BackingPlayer(engine.song)
+        self._backing.update(engine.position, self._context.audio if self._context else None)
+        if self._context and self._context.audio:
+            self._context.audio.flush_pending_offs()  # release auto-played notes
 
         # Evaluate hits
         for note in newly_active:

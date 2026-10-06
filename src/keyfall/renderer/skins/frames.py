@@ -93,6 +93,7 @@ class SettingsRow:
     value: str
     description: str
     adjustable: bool = True  # False for action rows like "Done"
+    swatch: str = ""  # optional color key for the value: right, left, both, backing, off
 
 
 @dataclass
@@ -112,3 +113,13 @@ class FreePlayFrame:
     recording: bool
     label_mode: NoteLabelMode = NoteLabelMode.NOTE_NAME
     clock: float = 0.0
+
+
+@dataclass
+class StemsFrame:
+    title: str
+    rows: list[SettingsRow]
+    selected: int
+    song: Song | None = None  # combined result, for the piano-roll preview
+    summary: list[str] = field(default_factory=list)
+    message: str = ""

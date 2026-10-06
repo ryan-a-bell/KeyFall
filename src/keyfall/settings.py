@@ -22,6 +22,11 @@ class AppearanceSettings:
     effects: str = "full"  # one of EFFECT_LEVELS
 
 
+@dataclass
+class DeviceSettings:
+    midi_input: str = "auto"  # "auto", "none", or a MIDI port name
+
+
 def _read_all(path: Path) -> dict[str, Any]:
     try:
         data = json.loads(path.read_text())
@@ -60,3 +65,11 @@ def load_appearance(path: Path | None = None) -> AppearanceSettings:
 
 def save_appearance(settings: AppearanceSettings, path: Path | None = None) -> None:
     save_section("appearance", settings, path)
+
+
+def load_devices(path: Path | None = None) -> DeviceSettings:
+    return load_section("devices", DeviceSettings, path)
+
+
+def save_devices(settings: DeviceSettings, path: Path | None = None) -> None:
+    save_section("devices", settings, path)

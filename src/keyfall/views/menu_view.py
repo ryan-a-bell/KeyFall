@@ -8,6 +8,7 @@ import pygame
 
 from keyfall.renderer.skins.frames import MenuFrame, MenuSong, SongDetails
 from keyfall.song_loader import HandSplitStrategy, load_song
+from keyfall.stems import MIDI_SUFFIXES, StemSet, is_stem_folder
 from keyfall.views.base import ViewAction, ViewContext
 
 _KIND = {".mid": "MIDI", ".midi": "MIDI", ".xml": "MusicXML", ".musicxml": "MusicXML",
@@ -34,6 +35,10 @@ class MenuView:
 
     def on_enter(self, context: ViewContext) -> None:
         self._context = context
+        ensure = getattr(context.midi_input, "ensure", None)
+        if ensure:
+            ensure()  # pick up a keyboard plugged in after launch
+        self._details.clear()  # stem roles may have changed
         self._scan_songs()
 
     def on_exit(self) -> None:
@@ -44,21 +49,30 @@ class MenuView:
         if self._context and self._context.songs_dir:
             songs_path = Path(self._context.songs_dir)
             if songs_path.is_dir():
-                files = [f for f in songs_path.iterdir() if f.suffix.lower() in _KIND]
-                self._song_files = sorted(files, key=lambda f: f.stem.lower())
+                entries = [f for f in songs_path.iterdir()
+                           if (f.is_file() and f.suffix.lower() in _KIND) or is_stem_folder(f)]
+                self._song_files = sorted(entries, key=lambda f: f.stem.lower() if f.is_file()
+                                          else f.name.lower())
         progress = self._context.progress if self._context else None
         self._songs = []
         for f in self._song_files:
+            title = f.name if f.is_dir() else f.stem
             best = None
             if progress is not None:
                 try:
-                    row = progress.get_best(f.stem)
+                    row = progress.get_best(title)
                     best = row["accuracy_pct"] if row else None
                 except Exception:
                     best = None
-            self._songs.append(MenuSong(title=f.stem, kind=_KIND[f.suffix.lower()],
-                                        best_accuracy=best))
+            self._songs.append(MenuSong(title=title, kind=self._kind(f), best_accuracy=best))
         self._selected = min(self._selected, max(0, len(self._songs) - 1))
+
+    @staticmethod
+    def _kind(path: Path) -> str:
+        if path.is_dir():
+            count = sum(1 for f in path.iterdir() if f.suffix.lower() in MIDI_SUFFIXES)
+            return f"Stems · {count}"
+        return _KIND[path.suffix.lower()]
 
     def _selected_details(self) -> SongDetails | None:
         """Load and analyse the highlighted song once, on demand."""
@@ -67,7 +81,10 @@ class MenuView:
         path = self._song_files[self._selected]
         if path not in self._details:
             try:
-                song = load_song(path, self._hand_splits[self._hand_split])
+                if path.is_dir():
+                    song = StemSet.load(path).combine()
+                else:
+                    song = load_song(path, self._hand_splits[self._hand_split])
                 from keyfall.ai.difficulty import estimate
                 report = estimate(song)
                 self._details[path] = SongDetails(
@@ -114,6 +131,9 @@ class MenuView:
             return None
 
         song_path = self._song_files[self._selected]
+        if song_path.is_dir():
+            return ViewAction(kind="push", target="stems",
+                              context_patch={"stem_folder": str(song_path), "next_view": target})
         try:
             song = load_song(str(song_path), self._hand_splits[self._hand_split])
         except Exception as exc:
@@ -133,7 +153,9 @@ class MenuView:
         if ctx is None:
             return
         status = ctx.audio_status or "Sound: off"
-        midi_ok = ctx.midi_input is not None
+        midi = ctx.midi_input
+        midi_ok = bool(getattr(midi, "connected", midi is not None))
+        midi_name = getattr(midi, "port_name", None) or "Connected"
         ctx.skin.draw_menu(surface, MenuFrame(
             songs=self._songs,
             selected=self._selected,
@@ -141,7 +163,7 @@ class MenuView:
             mode=self._mode,
             hand_split=self._hand_splits[self._hand_split].name.replace("_", " ").title(),
             audio_status=status,
-            midi_status="Connected" if midi_ok else "Not found · using computer keys",
+            midi_status=midi_name if midi_ok else "Not found · using computer keys",
             midi_connected=midi_ok,
             sound_ok=not status.startswith("Sound: off"),
             details=self._selected_details(),

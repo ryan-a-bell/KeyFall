@@ -19,7 +19,14 @@ from keyfall.models import Hand, Song
 from keyfall.notation import render_notation
 from keyfall.renderer import fonts
 from keyfall.renderer.draw import Color, chevron, mix, rrect, text, tracked
-from keyfall.renderer.skins.frames import FreePlayFrame, MenuFrame, PlayFrame, SettingsFrame
+from keyfall.renderer.skins.frames import (
+    FreePlayFrame,
+    MenuFrame,
+    PlayFrame,
+    SettingsFrame,
+    SettingsRow,
+    StemsFrame,
+)
 from keyfall.renderer.skins.keys import KeyLayout, NoteIndex, fit_range, is_black, note_name
 from keyfall.renderer.theme import Theme
 
@@ -133,6 +140,41 @@ class Skin:
         pygame.draw.line(surface, self.p.line, (rect.x, rect.bottom - 1),
                          (rect.right, rect.bottom - 1))
 
+    def swatch_color(self, key: str) -> Color:
+        return {"right": self.right, "left": self.left, "both": self.p.accent,
+                "backing": self.p.muted, "off": self.p.faint}.get(key, self.p.text)
+
+    def _draw_row(self, surface: pygame.Surface, row: SettingsRow, selected: bool, x: int,
+                  y: int, width: int, height: int = 68) -> pygame.Rect:
+        """One adjustable "label ‹ value ›" row (shared by Settings and Stems)."""
+        p = self.p
+        r = pygame.Rect(x, y, width, height if row.adjustable else 52)
+        rrect(surface, p.panel2 if selected else p.panel, r, 12, alpha=235)
+        if selected:
+            rrect(surface, p.accent, r, 12, width=2)
+        label_font = self.ui(700, 17)
+        label = row.label
+        while len(label) > 4 and label_font.size(label)[0] > width - 330:
+            label = label[:-2] + "…"
+        text(surface, label_font, label, p.text, (r.x + 20, r.y + 12))
+        if row.adjustable:
+            text(surface, self.ui(400, 13), row.description, p.muted, (r.x + 20, r.y + 38))
+            val_font = self.ui(700, 16)
+            value = row.value
+            while len(value) > 4 and val_font.size(value)[0] > 250:
+                value = value[:-2] + "…"
+            vw = val_font.size(value)[0]
+            vx = r.right - 44 - vw
+            color = self.swatch_color(row.swatch) if row.swatch else (
+                p.accent if selected else p.text)
+            if row.swatch:
+                pygame.draw.circle(surface, color, (vx - 34, r.y + 24), 5)
+            text(surface, val_font, value, color, (vx, r.y + 14))
+            col = p.accent if selected else p.faint
+            chevron(surface, col, (vx - 16, r.y + 24), 5, "left")
+            chevron(surface, col, (r.right - 28, r.y + 24), 5, "right")
+        return r
+
     def draw_settings(self, surface: pygame.Surface, frame: SettingsFrame) -> None:
         p = self.p
         w, h = surface.get_size()
@@ -143,22 +185,7 @@ class Skin:
 
         y = 130
         for i, row in enumerate(frame.rows):
-            selected = i == frame.selected
-            r = pygame.Rect(48, y, 560, 68 if row.adjustable else 52)
-            rrect(surface, p.panel2 if selected else p.panel, r, 12, alpha=235)
-            if selected:
-                rrect(surface, p.accent, r, 12, width=2)
-            text(surface, self.ui(700, 17), row.label, p.text, (r.x + 20, r.y + 12))
-            if row.adjustable:
-                text(surface, self.ui(400, 13), row.description, p.muted, (r.x + 20, r.y + 38))
-                val_font = self.ui(700, 16)
-                vw = val_font.size(row.value)[0]
-                vx = r.right - 44 - vw
-                text(surface, val_font, row.value, p.accent if selected else p.text,
-                     (vx, r.y + 14))
-                col = p.accent if selected else p.faint
-                chevron(surface, col, (vx - 16, r.y + 24), 5, "left")
-                chevron(surface, col, (r.right - 28, r.y + 24), 5, "right")
+            r = self._draw_row(surface, row, i == frame.selected, 48, y, 560)
             y = r.bottom + 10
 
         # Live preview of the selected theme
@@ -177,6 +204,72 @@ class Skin:
 
         hints = "Up/Down: choose setting   Left/Right: change   Esc: back"
         text(surface, self.ui(500, 13), hints, p.faint, (60, h - 34))
+
+    def draw_stems(self, surface: pygame.Surface, frame: StemsFrame) -> None:
+        p = self.p
+        w, h = surface.get_size()
+        self.draw_backdrop(surface)
+        text(surface, self.display(800, 30), frame.title, p.text, (60, 36))
+        text(surface, self.ui(400, 15),
+             "Choose who plays each stem. Your choices are saved with the song.",
+             p.muted, (60, 80))
+
+        row_h, top = 62, 122
+        visible = max(1, (h - top - 64) // row_h)
+        start = max(0, min(frame.selected - visible // 2, len(frame.rows) - visible))
+        y = top
+        for i in range(start, min(len(frame.rows), start + visible)):
+            r = self._draw_row(surface, frame.rows[i], i == frame.selected, 48, y, 600, 56)
+            y = r.bottom + 6
+        if start > 0:
+            chevron(surface, p.muted, (348, top - 10), 6, "up")
+        if start + visible < len(frame.rows):
+            chevron(surface, p.muted, (348, h - 54), 6, "down")
+
+        roll = pygame.Rect(690, 150, w - 690 - 48, 300)
+        tracked(surface, self.label(700, 12), "RESULT", p.muted, (roll.x, roll.y - 24), 2)
+        rrect(surface, p.panel, roll, 12)
+        if frame.song is not None:
+            self._draw_roll(surface, frame.song, roll.inflate(-20, -20))
+        rrect(surface, p.line, roll, 12, width=1)
+        lx = roll.x
+        for key, label in (("right", "Right hand"), ("left", "Left hand"),
+                           ("backing", "Backing (heard, not played)")):
+            pygame.draw.circle(surface, self.swatch_color(key), (lx + 6, roll.bottom + 22), 5)
+            r = text(surface, self.ui(500, 13), label, p.muted, (lx + 18, roll.bottom + 13))
+            lx = r.right + 22
+        for i, line in enumerate(frame.summary):
+            text(surface, self.ui(500 if i else 700, 14), line, p.text if i == 0 else p.muted,
+                 (roll.x, roll.bottom + 50 + i * 24))
+        if frame.message:
+            text(surface, self.ui(600, 14), frame.message, p.miss,
+                 (roll.x, roll.bottom + 54 + len(frame.summary) * 24))
+        text(surface, self.ui(500, 13),
+             "Up/Down: choose   Left/Right: change   Enter on Start: play   Esc: back",
+             p.faint, (60, h - 34))
+
+    def _draw_roll(self, surface: pygame.Surface, song: Song, rect: pygame.Rect) -> None:
+        """Tiny piano roll of the whole song: time across, pitch up."""
+        notes = song.notes + song.backing
+        if not notes or song.duration <= 0:
+            text(surface, self.ui(500, 14), "No notes to play", self.p.faint, rect.center,
+                 "center")
+            return
+        lo = min(n.pitch for n in notes) - 1
+        hi = max(n.pitch for n in notes) + 1
+        sx = rect.w / song.duration
+        sy = rect.h / max(1, hi - lo)
+        backing_col = mix(self.p.muted, self.p.panel, 0.45)
+        for group, is_backing in ((song.backing, True), (song.notes, False)):
+            for n in group:
+                color = backing_col if is_backing else self.hand_color(n.hand)
+                x = rect.x + n.start_time * sx
+                y = rect.bottom - (n.pitch - lo) * sy
+                pygame.draw.rect(surface, color, (int(x), int(y - max(2, sy)),
+                                                  max(2, int(n.duration * sx)), max(2, int(sy))))
+        if lo < 60 < hi:
+            y = rect.bottom - (60 - lo) * sy
+            text(surface, self.ui(600, 10), "C4", self.p.faint, (rect.x - 8, int(y)), "midright")
 
     def draw_freeplay(self, surface: pygame.Surface, frame: FreePlayFrame) -> None:
         p = self.p

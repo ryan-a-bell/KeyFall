@@ -11,7 +11,7 @@ from keyfall.models import Hand, Song
 
 if TYPE_CHECKING:
     from keyfall.audio import AudioEngine
-    from keyfall.midi_input import KeyboardInput, MidiInput
+    from keyfall.midi_input import KeyboardInput, MidiInput, MidiInputHub
     from keyfall.plugins.manager import PluginManager
     from keyfall.progress import ProgressTracker
     from keyfall.renderer.skins import Skin
@@ -23,7 +23,7 @@ class ViewContext:
     """Shared state passed to views on entry."""
 
     screen_size: tuple[int, int]
-    midi_input: MidiInput | None
+    midi_input: MidiInputHub | MidiInput | None
     audio: AudioEngine | None
     progress: ProgressTracker | None
     plugin_manager: PluginManager | None = None
@@ -34,6 +34,8 @@ class ViewContext:
     tempo_scale: float = 1.0
     songs_dir: str = ""
     audio_status: str = ""
+    stem_folder: str = ""  # multi-stem song folder for the Stems screen
+    next_view: str = ""  # where the Stems screen goes when you press Start
     ui: UIState | None = None  # shared by reference across context copies
 
     @property
@@ -161,6 +163,8 @@ class ViewManager:
             tempo_scale=self._context.tempo_scale,
             songs_dir=self._context.songs_dir,
             audio_status=self._context.audio_status,
+            stem_folder=self._context.stem_folder,
+            next_view=self._context.next_view,
             ui=self._context.ui,
         )
         for key, val in overrides.items():

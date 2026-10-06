@@ -54,6 +54,8 @@ class Song:
     time_signatures: list[TimeSignature] = field(default_factory=list)
     ticks_per_beat: int = 480
     duration: float = 0.0  # total length in seconds
+    # Accompaniment that is heard but not played or scored (e.g. Suno backing stems)
+    backing: list[NoteEvent] = field(default_factory=list)
 
 
 @dataclass

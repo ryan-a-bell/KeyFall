@@ -217,8 +217,52 @@ def select_section(
                 )
             )
 
+    for note in song.backing:
+        if start_time <= note.start_time < end_time:
+            section.backing.append(
+                NoteEvent(
+                    pitch=note.pitch,
+                    start_time=note.start_time - start_time,
+                    duration=note.duration,
+                    velocity=note.velocity,
+                    hand=note.hand,
+                    track=note.track,
+                )
+            )
+
     if section.notes:
         last = section.notes[-1]
         section.duration = last.start_time + last.duration
 
     return section
+
+
+class BackingPlayer:
+    """Plays a song's backing notes through the audio engine as playback advances.
+
+    Handles restarts and seeks: if the position jumps backwards, it rewinds.
+    """
+
+    CHANNEL = 1
+    VOLUME = 0.7
+
+    def __init__(self, song: Song) -> None:
+        self.notes = song.backing
+        self._starts = [n.start_time for n in self.notes]
+        self._index = 0
+        self._last_position = 0.0
+
+    def update(self, position: float, audio) -> None:
+        if not self.notes:
+            return
+        if position < self._last_position:
+            from bisect import bisect_left
+            self._index = bisect_left(self._starts, position)
+        self._last_position = position
+        while self._index < len(self.notes) and self.notes[self._index].start_time <= position:
+            note = self.notes[self._index]
+            self._index += 1
+            if audio is not None and note.start_time >= position - 0.25:  # skip stale notes
+                quiet = NoteEvent(note.pitch, note.start_time, note.duration,
+                                  max(1, int(note.velocity * self.VOLUME)), note.hand, note.track)
+                audio.play_note_event(quiet, channel=self.CHANNEL)
