@@ -20,13 +20,13 @@ EFFECT_LEVELS = ("full", "reduced", "off")
 class AppearanceSettings:
     theme: str = "studio"
     effects: str = "full"  # one of EFFECT_LEVELS
-    # "falling": sheet music on top, notes fall onto the piano at the bottom
-    # "rising":  piano on top, notes rise up to it, sheet music at the bottom
-    layout: str = "falling"
+    # where the sheet music goes: "above" the falling notes, or "below" the piano
+    layout: str = "above"
     notation: str = "practice"  # sheet music: "practice" (Practice only), "always", or "off"
 
 
-LAYOUTS = ("falling", "rising")
+LAYOUTS = ("above", "below")
+_OLD_LAYOUTS = {"falling": "above", "rising": "below"}  # values saved by earlier versions
 NOTATION_MODES = ("practice", "always", "off")
 
 
@@ -81,8 +81,9 @@ def load_appearance(path: Path | None = None) -> AppearanceSettings:
     settings = load_section("appearance", AppearanceSettings, path)
     if settings.effects not in EFFECT_LEVELS:
         settings.effects = "full"
+    settings.layout = _OLD_LAYOUTS.get(settings.layout, settings.layout)
     if settings.layout not in LAYOUTS:
-        settings.layout = "falling"
+        settings.layout = "above"
     if settings.notation not in NOTATION_MODES:
         settings.notation = "practice"
     return settings

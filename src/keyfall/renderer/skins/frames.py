@@ -51,7 +51,7 @@ class PlayFrame:
     metronome: str = "off"  # off | count-in | on
     mic_level: float | None = None  # 0..1 while listening through a microphone
     coach: str = ""  # e.g. "Coach · Bars 5–8 · Right hand", shown in the top bar
-    rising: bool = False  # piano on top, notes rise up to it, sheet music at the bottom
+    sheet_below: bool = False  # sheet music under the piano instead of above the notes
 
     @property
     def progress(self) -> float:

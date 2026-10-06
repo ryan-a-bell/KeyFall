@@ -57,35 +57,25 @@ class StudioSkin(Skin):
         p = self.p
         w, h = surface.get_size()
         lo, hi = self.song_range(frame.song)
-        layout = KeyLayout(lo, hi, 0, w, h - KEYBOARD_HEIGHT, KEYBOARD_HEIGHT)
         notation_h = 170 if frame.show_notation else 0
-        top = TOP_BAR + notation_h
+        below = frame.sheet_below and notation_h > 0
+        kb_bottom = h - notation_h if below else h  # sheet music under the piano, if chosen
+        layout = KeyLayout(lo, hi, 0, w, kb_bottom - KEYBOARD_HEIGHT, KEYBOARD_HEIGHT)
+        top = TOP_BAR + (0 if below else notation_h)
         area = pygame.Rect(0, top, w, layout.y - 5 - top)
-        field = pygame.Rect(0, top, w, h - top)  # notes + keyboard, as in the falling layout
 
-        background = vgradient((w, h), p.bg, p.bg2)
-        surface.blit(background, (0, 0))
-        target = self.begin_field(surface, frame.rising)
-        if target is not surface:
-            target.blit(background, (0, 0))
-        self._draw_lanes(target, frame, layout, area)
-        self.draw_backing(target, frame, layout, area, LOOK_AHEAD, (160, 168, 184),
+        surface.blit(vgradient((w, h), p.bg, p.bg2), (0, 0))
+        self._draw_lanes(surface, frame, layout, area)
+        self.draw_backing(surface, frame, layout, area, LOOK_AHEAD, (160, 168, 184),
                           fill_alpha=36, edge_alpha=110)
-        self._draw_notes(target, frame, layout, area)
-        pygame.draw.line(target, (255, 255, 255), (0, area.bottom - 1), (w, area.bottom - 1))
-        self.draw_keyboard(target, layout, self.pressed_hands(frame, layout))
-        if frame.rising:  # piano under the top bar, notes rise, sheet music at the bottom
-            self.end_field(surface, target, field, TOP_BAR)
-            area = self.flip_rect(area, field, TOP_BAR)
-            notation = pygame.Rect(0, TOP_BAR + field.h, w, notation_h)
-        else:
-            notation = pygame.Rect(0, TOP_BAR, w, notation_h)
+        self._draw_notes(surface, frame, layout, area)
+        pygame.draw.line(surface, (255, 255, 255), (0, area.bottom - 1), (w, area.bottom - 1))
+        self.draw_keyboard(surface, layout, self.pressed_hands(frame, layout))
         self._draw_top_bar(surface, frame)
         if frame.show_notation:
-            self.draw_notation_panel(surface, frame, notation)
-        # stats sit at the far end of the notes, away from where they land
-        card_y = area.bottom - 166 if frame.rising else area.y + 16
-        self._draw_stats_card(surface, frame, pygame.Rect(w - 236, card_y, 212, 150))
+            y = kb_bottom if below else TOP_BAR
+            self.draw_notation_panel(surface, frame, pygame.Rect(0, y, w, notation_h))
+        self._draw_stats_card(surface, frame, pygame.Rect(w - 236, area.y + 16, 212, 150))
         self.draw_count_in(surface, frame, area)
         if frame.paused:
             self._draw_paused(surface, frame, area)
@@ -109,7 +99,7 @@ class StudioSkin(Skin):
                                  (0, int(y)), (area.right, int(y)))
                 if downbeat and b >= 0:
                     first_bar = frame.loop[0] if frame.loop else 1  # real bar numbers in loops
-                    self.field_text(surface, self.ui(600, 11), str(b // per_bar + first_bar),
+                    text(surface, self.ui(600, 11), str(b // per_bar + first_bar),
                                     p.faint, (8, int(y) - 16))
 
     def _draw_notes(self, surface, frame: PlayFrame, layout: KeyLayout, area) -> None:
@@ -137,7 +127,7 @@ class StudioSkin(Skin):
                              (r.right - 5, r.y + 1))
             lbl = label_for(n.pitch, self.label_mode)
             if lbl and r.h > 22 and lw > 12:
-                self.field_text(surface, label_font, lbl, mix(c, (0, 0, 0), 0.6),
+                text(surface, label_font, lbl, mix(c, (0, 0, 0), 0.6),
                                 (r.centerx, r.bottom - 9), "center")
 
     def _draw_top_bar(self, surface, frame: PlayFrame) -> None:
@@ -250,7 +240,7 @@ class StudioSkin(Skin):
                              r.topleft)
             pygame.draw.line(surface, (180, 184, 192), (r.right - 1, r.y), (r.right - 1, r.bottom))
             if pitch % 12 == 0:
-                self.field_text(surface, label_font, note_name(pitch), (140, 146, 158),
+                text(surface, label_font, note_name(pitch), (140, 146, 158),
                                 (r.centerx, r.bottom - 12), "center")
         for pitch in range(layout.lo, layout.hi + 1):
             if not is_black(pitch):

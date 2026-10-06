@@ -22,16 +22,16 @@ class ClassicSkin(Skin):
         p = self.p
         w, h = surface.get_size()
         surface.fill(p.bg)
-        kb_y = h - KEYBOARD_HEIGHT
-        layout = KeyLayout(MIDI_NOTE_MIN, MIDI_NOTE_MAX, 0, w, kb_y, KEYBOARD_HEIGHT)
         notation_h = 180 if frame.show_notation else 0
-        top = 44 + notation_h
-        field = pygame.Rect(0, top, w, h - top)
+        below = frame.sheet_below and notation_h > 0
+        kb_y = h - KEYBOARD_HEIGHT - (notation_h if below else 0)
+        layout = KeyLayout(MIDI_NOTE_MIN, MIDI_NOTE_MAX, 0, w, kb_y, KEYBOARD_HEIGHT)
+        top = 44 + (0 if below else notation_h)
+        if frame.show_notation:
+            y = kb_y + KEYBOARD_HEIGHT if below else 44
+            self.draw_notation_panel(surface, frame, pygame.Rect(0, y, w, notation_h))
 
-        target = self.begin_field(surface, frame.rising)
-        if target is not surface:
-            target.fill(p.bg)
-        self.draw_backing(target, frame, layout, pygame.Rect(0, 0, w, kb_y), LOOK_AHEAD,
+        self.draw_backing(surface, frame, layout, pygame.Rect(0, 0, w, kb_y), LOOK_AHEAD,
                           (110, 110, 130), fill_alpha=60, edge_alpha=0,
                           clip=pygame.Rect(0, top, w, kb_y - top))
         pps = kb_y / LOOK_AHEAD
@@ -47,35 +47,23 @@ class ClassicSkin(Skin):
                 pygame.Rect(0, top, w, kb_y - top))
             if r.h <= 0:
                 continue
-            pygame.draw.rect(target, self.hand_color(n.hand), r, border_radius=3)
+            pygame.draw.rect(surface, self.hand_color(n.hand), r, border_radius=3)
             lbl = label_for(n.pitch, self.label_mode)
             if lbl and r.h > 16 and not is_black(n.pitch):
-                self.field_text(target, label_font, lbl, p.bg, (r.centerx, r.bottom - 8),
-                                "center")
-        self.draw_keyboard(target, layout, self.pressed_hands(frame, layout))
+                text(surface, label_font, lbl, p.bg, (r.centerx, r.bottom - 8), "center")
+        self.draw_keyboard(surface, layout, self.pressed_hands(frame, layout))
         if frame.count_in:
-            self.field_text(target, self.ui(700, 96), str(frame.count_in), p.text,
-                            (w // 2, (top + kb_y) // 2), "center")
+            text(surface, self.ui(700, 96), str(frame.count_in), p.text,
+                 (w // 2, (top + kb_y) // 2), "center")
         if frame.hints and (frame.paused or frame.mode == "Practice"):
-            self.field_text(target, self.ui(500, 16), frame.hints, p.faint, (10, kb_y - 26))
-
-        if frame.rising:
-            self.end_field(surface, target, field, 44)
-            if frame.show_notation:
-                self.draw_notation_panel(surface, frame, pygame.Rect(0, 44 + field.h, w,
-                                                                     notation_h))
-        elif frame.show_notation:
-            self.draw_notation_panel(surface, frame, pygame.Rect(0, 44, w, notation_h))
+            text(surface, self.ui(500, 16), frame.hints, p.faint, (10, kb_y - 26))
 
         hud = self.ui(500, 20)
         score = frame.stats.perfect * 3 + frame.stats.good * 2 + frame.stats.ok
         lines = (f"Score: {score}", f"Streak: {frame.streak}",
                  f"Accuracy: {frame.stats.accuracy_pct:.0f}%")
-        if frame.rising:  # keyboard sits just below the HUD strip: keep the HUD on one line
-            text(surface, self.ui(500, 18), "   ".join(lines), p.text, (10, 12))
-        else:
-            for i, line in enumerate(lines):
-                text(surface, hud, line, p.text, (10, 10 + i * 28))
+        for i, line in enumerate(lines):
+            text(surface, hud, line, p.text, (10, 10 + i * 28))
 
         parts = [f"Tempo: {frame.tempo_scale:.0%}", "WAIT" if frame.wait_mode else "PLAY",
                  f"Hand: {frame.active_hand.name}"]

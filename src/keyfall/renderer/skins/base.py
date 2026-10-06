@@ -47,8 +47,6 @@ class Skin:
             self.p = type(self.p)(**{**self.p.__dict__, "bg": (0, 0, 0), "bg2": (0, 0, 0),
                                      "text": (255, 255, 255), "muted": (220, 220, 220)})
         self._index: NoteIndex | None = None
-        self._deferred: list | None = None  # field text held back while drawing flipped
-        self._field_buf: pygame.Surface | None = None
         self._backing_index: NoteIndex | None = None
         self._range_cache: tuple[int, tuple[int, int]] | None = None
 
@@ -276,49 +274,6 @@ class Skin:
 
         hints = "Up/Down: choose setting   Left/Right: change   Esc: back"
         text(surface, self.ui(500, 13), hints, p.faint, (60, h - 34))
-
-    # ------------------------------------------------------------ rising layout
-    # The playing field (notes, lanes, hit line, keyboard, sparks) is drawn exactly
-    # as in the falling layout, into an off-screen buffer, then flipped vertically
-    # onto the screen. Text inside the field is held back and drawn upright at its
-    # mirrored position, so labels never appear upside down.
-    def field_text(self, surface: pygame.Surface, font: pygame.font.Font, s: str, color,
-                   pos, anchor: str = "topleft") -> None:
-        if self._deferred is not None:
-            self._deferred.append((font, s, color, pos, anchor))
-        else:
-            text(surface, font, s, color, pos, anchor)
-
-    def begin_field(self, surface: pygame.Surface, rising: bool) -> pygame.Surface:
-        """Where to draw the field: the screen, or a buffer to flip afterwards."""
-        if not rising:
-            self._deferred = None
-            return surface
-        if self._field_buf is None or self._field_buf.get_size() != surface.get_size():
-            self._field_buf = pygame.Surface(surface.get_size())
-        self._deferred = []
-        return self._field_buf
-
-    def end_field(self, surface: pygame.Surface, buf: pygame.Surface, field: pygame.Rect,
-                  dest_y: int) -> None:
-        """Flip ``field`` (drawn into ``buf``) vertically onto ``surface`` at ``dest_y``."""
-        if buf is surface:
-            return
-        surface.blit(pygame.transform.flip(buf.subsurface(field), False, True),
-                     (field.x, dest_y))
-        swap = {"top": "bottom", "bottom": "top"}
-        for font, s, color, (x, y), anchor in self._deferred or []:
-            for a, b in swap.items():
-                if anchor.startswith(a):
-                    anchor = b + anchor[len(a):]
-                    break
-            text(surface, font, s, color, (x, dest_y + (field.bottom - y)), anchor)
-        self._deferred = None
-
-    @staticmethod
-    def flip_rect(rect: pygame.Rect, field: pygame.Rect, dest_y: int) -> pygame.Rect:
-        """Where ``rect`` (inside ``field``) ends up after the field is flipped."""
-        return pygame.Rect(rect.x, dest_y + (field.bottom - rect.bottom), rect.w, rect.h)
 
     # ------------------------------------------------------------ shared overlays
     def draw_grade(self, surface: pygame.Surface, letter: str, center, size: int) -> None:

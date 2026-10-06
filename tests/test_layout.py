@@ -1,4 +1,4 @@
-"""Screen layout: notes falling onto a piano at the bottom, or rising to one on top."""
+"""Sheet music position: above the falling notes (default) or below the piano."""
 
 import numpy as np
 import pygame
@@ -23,49 +23,41 @@ def _key_rows(surface):
 
 
 @pytest.mark.parametrize("name", list(SKINS))
-def test_keyboard_moves_to_the_top_when_rising(name):
+def test_piano_stays_at_the_bottom_with_notes_falling(name):
     pygame.init()
     skin = create_skin(name)
-    for rising, sheet in ((False, False), (True, False), (True, True)):
+    for below, sheet in ((False, False), (False, True), (True, True)):
         surf = pygame.Surface(SIZE)
         frame = demo_frame(demo_song())
-        frame.rising, frame.show_notation = rising, sheet
+        frame.sheet_below, frame.show_notation = below, sheet
         skin.draw_play(surf, frame)
         rows = _key_rows(surf)
-        assert len(rows), (name, rising)
-        if rising:
-            assert rows.max() < SIZE[1] // 2, (name, sheet)  # piano in the upper half
+        assert len(rows), (name, below, sheet)
+        assert rows.min() > SIZE[1] // 2, (name, below, sheet)  # piano in the lower half
+        if below:
+            assert rows.max() < SIZE[1] - 140, name  # sheet music fills the strip under it
         else:
-            assert rows.min() > SIZE[1] // 2, name  # piano in the lower half
+            assert rows.max() >= SIZE[1] - 5, name  # piano reaches the bottom edge
 
 
 @pytest.mark.parametrize("name", list(SKINS))
-def test_rising_draws_every_overlay(name):
+def test_sheet_below_draws_every_overlay(name):
     pygame.init()
     skin = create_skin(name, accessibility=accessibility.AccessibilitySettings(
         note_labels="NOTE_NAME"))
-    surf = pygame.Surface(SIZE)
     frame = demo_frame(demo_song())
-    frame.rising = frame.show_notation = frame.paused = True
+    frame.sheet_below = frame.show_notation = frame.paused = True
     frame.count_in = 2
     frame.loop = (3, 4)
-    skin.draw_play(surf, frame)
-    assert skin._deferred is None  # held-back field text was drawn and released
+    skin.draw_play(pygame.Surface(SIZE), frame)
 
 
-def test_flip_rect_and_text_anchor_swap():
-    pygame.init()
-    skin = create_skin("studio")
-    field = pygame.Rect(0, 234, 1280, 486)  # under top bar + sheet music
-    assert skin.flip_rect(pygame.Rect(0, 234, 1280, 100), field, 64) == pygame.Rect(
-        0, 64 + 386, 1280, 100)
-    surf = pygame.Surface(SIZE)
-    buf = skin.begin_field(surf, True)
-    font = pygame.font.Font(None, 20)
-    skin.field_text(buf, font, "C4", (255, 255, 255), (100, 700), "topleft")
-    assert skin._deferred == [(font, "C4", (255, 255, 255), (100, 700), "topleft")]
-    skin.end_field(surf, buf, field, 64)
-    assert skin._deferred is None
+def test_old_saved_layouts_are_migrated(tmp_path):
+    path = tmp_path / "s.json"
+    path.write_text('{"appearance": {"layout": "rising"}}')
+    assert settings.load_appearance(path).layout == "below"
+    path.write_text('{"appearance": {"layout": "falling"}}')
+    assert settings.load_appearance(path).layout == "above"
 
 
 @pytest.fixture
@@ -77,22 +69,22 @@ def ctx(tmp_path, monkeypatch):
                        ui=UIState())
 
 
-def test_settings_rows_switch_layout_and_sheet_music(ctx):
+def test_settings_rows_move_sheet_music_and_show_it_in_play(ctx):
     vm = ViewManager(ctx)
     vm.register(SettingsView)
     vm.push("settings")
     view = vm.active_view
     view.change(ROW_LAYOUT, 1)
     view.change(ROW_NOTATION, 1)
-    assert (ctx.ui.appearance.layout, ctx.ui.appearance.notation) == ("rising", "always")
+    assert (ctx.ui.appearance.layout, ctx.ui.appearance.notation) == ("below", "always")
     saved = settings.load_appearance()
-    assert (saved.layout, saved.notation) == ("rising", "always")
-    vm.draw(pygame.Surface(SIZE))  # preview renders the rising layout with sheet music
+    assert (saved.layout, saved.notation) == ("below", "always")
+    vm.draw(pygame.Surface(SIZE))  # preview shows the sheet music under the piano
 
 
 def test_play_mode_sheet_music_follows_setting_and_n_toggles(ctx):
     ctx.ui.appearance.notation = "always"
-    ctx.ui.appearance.layout = "rising"
+    ctx.ui.appearance.layout = "below"
     vm = ViewManager(ctx)
     vm.register(WaterfallView)
     vm.push("waterfall", song=demo_song())

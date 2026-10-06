@@ -304,7 +304,7 @@ class PracticeView:
             hit_results=self._hit_results,
             hints="N:notation L:loop [/]:section W:wait +/-:tempo 1/2/3:hand R:restart",
             clock=self._clock,
-            rising=appearance(ctx).layout == "rising",
+            sheet_below=appearance(ctx).layout == "below",
             count_in=(math.ceil(-engine.position / beat_length(engine.song) - 1e-6)
                       if engine.position < 0 else None),
             metronome=metronome_mode(ctx),

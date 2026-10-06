@@ -43,8 +43,7 @@ _PALETTE_NAMES = {
  ROW_MIDI, ROW_MIC, ROW_MIC_SENS, ROW_OUT, ROW_OUT_MODE, ROW_PIANO, ROW_GM,
  ROW_DONE) = range(15)
 ROW_COUNT = 15
-_LAYOUT_NAMES = {"falling": "Notes fall · piano at bottom",
-                 "rising": "Notes rise · piano on top"}
+_LAYOUT_NAMES = {"above": "Above the notes", "below": "Below the piano"}
 _NOTATION_NAMES = {"practice": "Practice only", "always": "Play and Practice", "off": "Off"}
 _SENS_NAMES = {"low": "Low (noisy room)", "normal": "Normal", "high": "High (quiet piano)"}
 _METRONOME_NAMES = {"off": "Off", "count-in": "Count-in only", "on": "Always"}
@@ -248,8 +247,8 @@ class SettingsView:
                         "Glow, light beams and sparks (lower for slower computers)"),
             SettingsRow("Note labels", _LABEL_NAMES.get(acc.get_label_mode(), "Off"),
                         "Show note names on the falling notes"),
-            SettingsRow("Screen layout", _LAYOUT_NAMES[a.layout],
-                        "Sheet music on top and piano below, or flipped"),
+            SettingsRow("Sheet music position", _LAYOUT_NAMES[a.layout],
+                        "Notes always fall onto the piano; the score goes above or under it"),
             SettingsRow("Sheet music", _NOTATION_NAMES[a.notation],
                         "Show the score above (or below) the notes; N toggles it while playing"),
             SettingsRow("Hand colors", _PALETTE_NAMES[acc.get_palette()],
@@ -331,7 +330,7 @@ class SettingsView:
             skin = create_skin(ui.appearance.theme, ui.appearance.effects, ui.accessibility)
             surf = pygame.Surface(self._context.screen_size)
             frame = demo_frame(self._song, label_mode=ui.accessibility.get_label_mode())
-            frame.rising = ui.appearance.layout == "rising"
+            frame.sheet_below = ui.appearance.layout == "below"
             frame.show_notation = ui.appearance.notation != "off"
             skin.draw_play(surf, frame)
             self._preview, self._preview_key = surf, key

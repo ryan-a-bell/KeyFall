@@ -37,14 +37,16 @@ Buttons:
 - **Play again** (`R`)
 - **Menu** (`Esc`)
 
-## Screen layout and sheet music
+## Sheet music
 
-**Settings → Screen layout**:
+Notes always fall from above onto the piano.
+
+**Settings → Sheet music position**:
 
 | Option | Arrangement (top to bottom) |
 |---|---|
-| **Notes fall · piano at bottom** (default) | sheet music → notes falling down → piano |
-| **Notes rise · piano on top** | piano → notes rising up → sheet music |
+| **Above the notes** (default) | sheet music → falling notes → piano |
+| **Below the piano** | falling notes → piano → sheet music |
 
 **Settings → Sheet music**:
 - **Practice only** (default)
@@ -53,8 +55,6 @@ Buttons:
 
 Press **N** during a song to show or hide it.
 
-To move from falling notes to reading the score, use "Notes rise" with sheet music on. The score then sits at the bottom of the screen, closest to the music on a real piano's stand. Your eyes can move from the notes to the staff as you get comfortable.
-
-How the flip works: each theme draws the playing field (notes, lanes, hit line, keyboard, sparks) as usual, then flips that region vertically. Text inside it (note names, bar numbers, octave labels) is drawn upright at its mirrored position. Score, stats and combo stay at the far end of the notes, away from where they land.
+To move from falling notes toward reading the score, put the sheet music below the piano and turn it on for Play too. You keep the falling notes you're used to, and the staff is right under the keys, the next place your eyes go.
 
 Screenshots: `docs/screenshots/layout/`.
