@@ -76,6 +76,10 @@ class PlaybackEngine:
         self.paused: bool = False
         self.active_hand: Hand = Hand.BOTH
         self.waiting: bool = False  # wait mode is holding for the player
+        # share of a chord that must be held to continue in wait mode (lower for a
+        # microphone, where one note of a chord can go undetected)
+        self.required_fraction: float = 1.0
+        self._starts = [n.start_time for n in song.notes]
 
     def set_tempo_scale(self, scale: float) -> None:
         """Set tempo scale, clamped to [0.25, 2.0]."""
@@ -115,7 +119,9 @@ class PlaybackEngine:
                 n.pitch for n in group
                 if self.active_hand == Hand.BOTH or n.hand == self.active_hand
             }
-            if not required.issubset(pressed_pitches):
+            held = len(required & pressed_pitches)
+            needed = max(1, round(len(required) * self.required_fraction)) if required else 0
+            if held < needed:
                 self.waiting = True
                 return played
             self.note_index += len(group)
@@ -150,6 +156,14 @@ class PlaybackEngine:
             else:
                 break
         return group
+
+    def expected_pitches(self, before: float = 0.15, after: float = 0.35) -> set[int]:
+        """Pitches the player should be playing around now (for guided detection)."""
+        from bisect import bisect_left, bisect_right
+        lo = bisect_left(self._starts, self.position - before)
+        hi = bisect_right(self._starts, self.position + after)
+        return {n.pitch for n in self.song.notes[lo:hi]
+                if self.active_hand == Hand.BOTH or n.hand == self.active_hand}
 
     @property
     def finished(self) -> bool:

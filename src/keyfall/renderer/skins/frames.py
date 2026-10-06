@@ -49,6 +49,8 @@ class PlayFrame:
     clock: float = 0.0  # seconds since the view opened (for animation)
     count_in: int | None = None  # beats left before the song starts (shown big)
     metronome: str = "off"  # off | count-in | on
+    mic_level: float | None = None  # 0..1 while listening through a microphone
+    coach: str = ""  # e.g. "Coach · Bars 5–8 · Right hand", shown in the top bar
 
     @property
     def progress(self) -> float:
@@ -86,6 +88,7 @@ class MenuFrame:
     details: SongDetails | None = None
     output_status: str = "Off"
     output_connected: bool = False
+    mic_status: str = ""  # empty = microphone off
     error: str = ""
     songs_dir: str = ""
     clock: float = 0.0
@@ -158,3 +161,31 @@ class ResultsFrame:
     buttons: list[str]
     selected: int
     clock: float = 0.0
+
+
+@dataclass
+class CoachSection:
+    first_bar: int
+    last_bar: int
+    progress: float  # 0..1 up the ladder
+    mastered: bool
+    current: bool
+    rung: str
+    tempo_pct: int
+
+
+@dataclass
+class CoachFrame:
+    title: str
+    mastery: float
+    sections: list[CoachSection]
+    step_label: str
+    step_why: str
+    verdict: str
+    tips: list[str]
+    today_passes: int
+    today_minutes: float
+    daily: list[tuple[str, float]]
+    buttons: list[str]
+    selected: int
+    verdict_good: bool = False  # True when the last pass moved the player forward

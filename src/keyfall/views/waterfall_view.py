@@ -24,6 +24,8 @@ from keyfall.views.base import (
     ViewContext,
     best_accuracy,
     metronome_mode,
+    mic_active,
+    poll_inputs,
     stop_outputs,
     update_outputs,
 )
@@ -46,6 +48,7 @@ class WaterfallView:
         self._offsets: list[float] = []
         self._outputs: SongOutputs | None = None
         self._click = ClickTrack()
+        self._press_pos: dict[int, float] = {}
         self._miss_bars: Counter[int] = Counter()
 
     def on_enter(self, context: ViewContext) -> None:
@@ -113,23 +116,10 @@ class WaterfallView:
             return None
         self._clock += dt
 
-        # Poll MIDI and keyboard input
-        if self._context:
-            for source in (self._context.midi_input, self._context.keyboard_input):
-                if source is None:
-                    continue
-                while True:
-                    evt = source.poll()
-                    if evt is None:
-                        break
-                    if evt.is_note_on:
-                        self._pressed.add(evt.pitch)
-                        if self._context.audio:
-                            self._context.audio.note_on(evt.pitch, evt.velocity)
-                    else:
-                        self._pressed.discard(evt.pitch)
-                        if self._context.audio:
-                            self._context.audio.note_off(evt.pitch)
+        # MIDI keyboard, computer keys, microphone
+        engine.required_fraction = 0.6 if mic_active(self._context) else 1.0
+        poll_inputs(self._context, self._pressed, self._press_pos, engine.position,
+                    engine.expected_pitches())
 
         # Advance playback
         newly_active = engine.update(dt, self._pressed)
@@ -153,7 +143,8 @@ class WaterfallView:
                 self._streak = 0
                 self._judge(HitGrade.MISS, note=note)
             elif note.pitch in self._pressed:
-                result = evaluate_hit(note, note.pitch, engine.position)
+                result = evaluate_hit(note, note.pitch,
+                                      self._press_pos.get(note.pitch, engine.position))
                 self._judge(result.grade, result.timing_offset_ms, note)
                 if result.grade == HitGrade.PERFECT:
                     self._stats.perfect += 1
@@ -243,4 +234,6 @@ class WaterfallView:
             count_in=(math.ceil(-engine.position / beat_length(engine.song) - 1e-6)
                       if engine.position < 0 else None),
             metronome=metronome_mode(ctx),
+            mic_level=ctx.mic_input.level if mic_active(ctx) else None,
+            coach=self._coach_label() if hasattr(self, "_coach_label") else "",
         ))

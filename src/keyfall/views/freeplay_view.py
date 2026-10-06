@@ -55,7 +55,11 @@ class FreePlayView:
             return None
 
         # Poll MIDI and keyboard input
-        for source in (self._context.midi_input, self._context.keyboard_input):
+        mic = self._context.mic_input
+        if getattr(mic, "connected", False):
+            mic.set_expected(None)  # free play: unguided detection
+        for source in (self._context.midi_input, self._context.keyboard_input,
+                       mic if getattr(mic, "connected", False) else None):
             if source is None:
                 continue
             while True:
@@ -65,7 +69,7 @@ class FreePlayView:
                 if evt.is_note_on:
                     self._pressed.add(evt.pitch)
                     self._mode.note_on(evt.pitch, evt.velocity)
-                    if self._context.audio:
+                    if self._context.audio and getattr(source, "echo", True):
                         self._context.audio.note_on(evt.pitch, evt.velocity)
                 else:
                     self._pressed.discard(evt.pitch)

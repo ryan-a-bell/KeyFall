@@ -20,6 +20,7 @@ from keyfall.notation import render_notation
 from keyfall.renderer import fonts
 from keyfall.renderer.draw import Color, chevron, mix, rrect, text, tracked
 from keyfall.renderer.skins.frames import (
+    CoachFrame,
     FreePlayFrame,
     MenuFrame,
     PlayFrame,
@@ -391,6 +392,102 @@ class Skin:
         if any(b.startswith("Practice") for b in frame.buttons):
             hints += "   P: practice bars"
         text(surface, self.ui(500, 13), hints + "   Esc: menu", p.faint, (60, h - 60))
+
+    def draw_coach(self, surface: pygame.Surface, frame: CoachFrame) -> None:
+        p = self.p
+        w, h = surface.get_size()
+        self.draw_backdrop(surface)
+        tracked(surface, self.label(700, 13), "PRACTICE COACH", p.accent, (60, 36), 2)
+        title = frame.title if len(frame.title) < 46 else frame.title[:44] + "…"
+        text(surface, self.display(800, 30), title, p.text, (60, 58))
+
+        # overall mastery ring + today
+        c = (w - 110, 82)
+        pygame.draw.circle(surface, p.panel2, c, 46, 8)
+        if frame.mastery > 0:
+            import math as _m
+            pygame.draw.arc(surface, p.good, (c[0] - 46, c[1] - 46, 92, 92), _m.pi / 2,
+                            _m.pi / 2 + 2 * _m.pi * frame.mastery, 8)
+        text(surface, self.display(800, 22), f"{frame.mastery:.0%}", p.text, c, "center")
+        text(surface, self.ui(500, 12), "learned", p.muted, (c[0], c[1] + 58), "center")
+        today = f"Today: {frame.today_passes} pass{'es' if frame.today_passes != 1 else ''}" \
+                f" · {frame.today_minutes:.0f} min"
+        text(surface, self.ui(500, 13), today, p.muted, (w - 190, 150), "topright")
+
+        # section map
+        tracked(surface, self.label(700, 12), "SECTIONS", p.muted, (60, 120), 2)
+        tile_w, gap = 74, 8
+        per_row = max(1, (w - 120 - 200) // (tile_w + gap))
+        for k, sec in enumerate(frame.sections[: per_row * 2]):
+            x = 60 + (k % per_row) * (tile_w + gap)
+            y = 144 + (k // per_row) * 70
+            r = pygame.Rect(x, y, tile_w, 60)
+            rrect(surface, p.panel, r, 10)
+            fill_h = int(r.h * sec.progress)
+            if fill_h:
+                color = p.good if sec.mastered else p.accent
+                rrect(surface, color, (r.x, r.bottom - fill_h, r.w, fill_h), 10, alpha=110)
+            if sec.current:
+                rrect(surface, p.accent, r.inflate(4, 4), 12, width=2)
+            text(surface, self.ui(700, 13), f"{sec.first_bar}–{sec.last_bar}", p.text,
+                 (r.centerx, r.y + 18), "center")
+            stage = ("Done" if sec.mastered else
+                     f"{sec.tempo_pct}%" if sec.rung == "tempo" else
+                     {"right": "R hand", "left": "L hand", "together": "Both"}.get(sec.rung, ""))
+            text(surface, self.ui(500, 11), stage, p.muted, (r.centerx, r.y + 40), "center")
+        rows = min(2, max(1, -(-len(frame.sections) // per_row)))
+        top = 144 + rows * 70 + 16
+        if len(frame.sections) > per_row * 2:
+            text(surface, self.ui(500, 12), f"+{len(frame.sections) - per_row * 2} more",
+                 p.faint, (60, top - 10))
+            top += 12
+
+        # next step card
+        card = pygame.Rect(60, max(top, 230), w - 120 - 340, 150)
+        rrect(surface, p.panel, card, 14, alpha=240)
+        rrect(surface, p.accent, (card.x, card.y + 16, 4, card.h - 32), 2)
+        tracked(surface, self.label(700, 12), "NEXT STEP", p.accent, (card.x + 24, card.y + 18), 2)
+        text(surface, self.display(800, 22), frame.step_label, p.text, (card.x + 24, card.y + 42))
+        text(surface, self.ui(400, 14), frame.step_why, p.muted, (card.x + 24, card.y + 80))
+        if frame.verdict:
+            text(surface, self.ui(700, 15), frame.verdict,
+                 p.good if frame.verdict_good else p.gold, (card.x + 24, card.y + 112))
+
+        # tips + progress chart
+        side = pygame.Rect(card.right + 20, card.y, w - 60 - card.right - 20, 150)
+        rrect(surface, p.panel, side, 14, alpha=240)
+        tracked(surface, self.label(700, 12), "PROGRESS BY DAY", p.muted,
+                (side.x + 18, side.y + 16), 2)
+        chart = pygame.Rect(side.x + 18, side.y + 44, side.w - 36, side.h - 66)
+        if frame.daily:
+            bw = min(26, chart.w // max(1, len(frame.daily)) - 4)
+            for k, (_day, acc) in enumerate(frame.daily):
+                bh = max(3, int(chart.h * acc / 100))
+                color = p.good if acc >= 90 else p.accent if acc >= 60 else p.miss
+                rrect(surface, color, (chart.x + k * (bw + 4), chart.bottom - bh, bw, bh), 3)
+        else:
+            text(surface, self.ui(500, 13), "Your daily accuracy will appear here.", p.faint,
+                 chart.center, "center")
+
+        y = card.bottom + 22
+        if frame.tips:
+            tracked(surface, self.label(700, 12), "TECHNIQUE", p.muted, (60, y), 2)
+            for k, tip in enumerate(frame.tips):
+                text(surface, self.ui(500, 14), f"•  {tip}", p.text, (60, y + 22 + k * 22))
+
+        bx = 60
+        for k, label in enumerate(frame.buttons):
+            f = self.ui(700, 16)
+            btn = pygame.Rect(bx, h - 110, f.size(label)[0] + 48, 50)
+            if k == frame.selected:
+                rrect(surface, p.accent, btn, 25)
+                text(surface, f, label, (255, 255, 255), btn.center, "center")
+            else:
+                rrect(surface, p.line, btn, 25, width=2)
+                text(surface, f, label, p.text, btn.center, "center")
+            bx = btn.right + 14
+        text(surface, self.ui(500, 13), "Left/Right: choose   Enter: go   Esc: menu", p.faint,
+             (60, h - 40))
 
     def draw_stems(self, surface: pygame.Surface, frame: StemsFrame) -> None:
         p = self.p

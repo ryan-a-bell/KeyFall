@@ -11,6 +11,7 @@ from keyfall.midi_input import KeyboardInput
 from keyfall.settings import load_appearance, load_devices, load_practice
 from keyfall.ui_state import UIState
 from keyfall.views.base import ViewContext, ViewManager
+from keyfall.views.coach_view import CoachView
 from keyfall.views.freeplay_view import FreePlayView
 from keyfall.views.menu_view import MenuView
 from keyfall.views.practice_view import PracticeView
@@ -41,11 +42,13 @@ class App:
             pass  # read-only home etc.: run with whatever folder was given
         midi_input = self._open_midi(ui.devices.midi_input)
         midi_output = self._open_midi_output(ui.devices.midi_output)
+        mic_input = self._open_mic(ui.devices.mic_input, ui.devices.mic_sensitivity)
 
         context = ViewContext(
             screen_size=(WINDOW_WIDTH, WINDOW_HEIGHT),
             midi_input=midi_input,
             midi_output=midi_output,
+            mic_input=mic_input,
             audio=audio,
             progress=progress,
             plugin_manager=plugin_manager,
@@ -65,6 +68,7 @@ class App:
         self.views.register(SettingsView)
         self.views.register(StemsView)
         self.views.register(ResultsView)
+        self.views.register(CoachView)
 
         # Register plugin views
         if plugin_manager:
@@ -97,15 +101,23 @@ class App:
     def _cleanup(self) -> None:
         while self.views.active_view:
             self.views.pop()
-        out = self.views._context.midi_output
-        if out is not None:
-            out.close()
+        for device in (self.views._context.midi_output, self.views._context.mic_input):
+            if device is not None:
+                device.close()
 
     @staticmethod
     def _open_midi(choice: str):
         """The shared MIDI input. Always returns a hub, even with no devices."""
         from keyfall.midi_input import MidiInputHub
         hub = MidiInputHub(choice=choice)
+        hub.select(choice)
+        return hub
+
+    @staticmethod
+    def _open_mic(choice: str, sensitivity: str):
+        """Microphone for an acoustic piano (off unless chosen in Settings)."""
+        from keyfall.mic_input import MicInputHub
+        hub = MicInputHub(choice=choice, sensitivity=sensitivity)
         hub.select(choice)
         return hub
 

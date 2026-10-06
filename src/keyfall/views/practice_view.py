@@ -9,7 +9,7 @@ import pygame
 
 from keyfall.accessibility import NoteLabelMode
 from keyfall.evaluator import evaluate_hit
-from keyfall.models import Hand, HitGrade, NoteEvent, SessionStats, Song
+from keyfall.models import Hand, HitGrade, HitResult, NoteEvent, SessionStats, Song
 from keyfall.playback import (
     ClickTrack,
     PlaybackEngine,
@@ -25,6 +25,8 @@ from keyfall.views.base import (
     ViewContext,
     best_accuracy,
     metronome_mode,
+    mic_active,
+    poll_inputs,
     stop_outputs,
     update_outputs,
 )
@@ -48,6 +50,9 @@ class PracticeView:
         self._offsets: list[float] = []
         self._outputs: SongOutputs | None = None
         self._click = ClickTrack()
+        self._press_pos: dict[int, float] = {}
+        self._coach = None  # CoachStep when run from the Coach screen
+        self._hits: list = []  # HitResults for technique feedback
         self._miss_bars: Counter[int] = Counter()
         self._show_notation: bool = True
         self._looping: bool = False
@@ -70,7 +75,12 @@ class PracticeView:
         self._hit_results = {}
         self._loop_count = 0
 
-        if context.section:  # e.g. "Practice bars 5-6" from the results screen
+        self._coach = context.coach_step
+        self._hits = []
+        if self._coach is not None:
+            self._section_start, self._section_end = self._coach.first_bar, self._coach.last_bar
+            self._looping = False
+        elif context.section:  # e.g. "Practice bars 5-6" from the results screen
             self._section_start, self._section_end = context.section
             self._looping = True
 
@@ -80,13 +90,18 @@ class PracticeView:
         song = self._full_song
         if song is None:
             return
-        if self._looping:
+        coach = self._coach
+        if self._looping or (coach is not None and coach.rung != "full"):
             song = select_section(song, self._section_start, self._section_end)
         self._engine = PlaybackEngine(song)
         if self._context:
             self._engine.set_tempo_scale(self._context.tempo_scale)
             self._engine.active_hand = self._context.hand
         self._engine.wait_mode = True  # default for practice
+        if coach is not None:
+            self._engine.wait_mode = coach.wait_mode
+            self._engine.set_tempo_scale(coach.tempo_pct / 100)
+            self._engine.active_hand = coach.hand
         self._start_position()
 
     def on_exit(self) -> None:
@@ -107,6 +122,8 @@ class PracticeView:
             return None
 
         if event.key == pygame.K_ESCAPE:
+            if self._coach is not None:  # back to the Coach screen, no verdict
+                return self._coach_action(completed=False)
             return ViewAction(kind="pop")
         elif event.key == pygame.K_SPACE:
             engine.paused = not engine.paused
@@ -148,23 +165,10 @@ class PracticeView:
             return None
         self._clock += dt
 
-        # Poll MIDI and keyboard input
-        if self._context:
-            for source in (self._context.midi_input, self._context.keyboard_input):
-                if source is None:
-                    continue
-                while True:
-                    evt = source.poll()
-                    if evt is None:
-                        break
-                    if evt.is_note_on:
-                        self._pressed.add(evt.pitch)
-                        if self._context.audio:
-                            self._context.audio.note_on(evt.pitch, evt.velocity)
-                    else:
-                        self._pressed.discard(evt.pitch)
-                        if self._context.audio:
-                            self._context.audio.note_off(evt.pitch)
+        # MIDI keyboard, computer keys, microphone
+        engine.required_fraction = 0.6 if mic_active(self._context) else 1.0
+        poll_inputs(self._context, self._pressed, self._press_pos, engine.position,
+                    engine.expected_pitches())
 
         newly_active = engine.update(dt, self._pressed)
         # auto-played hand, backing tracks, key lights (synth and/or keyboard)
@@ -184,9 +188,12 @@ class PracticeView:
                 self._stats.missed += 1
                 self._streak = 0
                 self._judge(HitGrade.MISS, note=note)
+                self._hits.append(HitResult(note, None, HitGrade.MISS, 0.0))
             elif note.pitch in self._pressed:
-                result = evaluate_hit(note, note.pitch, engine.position)
+                result = evaluate_hit(note, note.pitch,
+                                      self._press_pos.get(note.pitch, engine.position))
                 self._judge(result.grade, result.timing_offset_ms, note)
+                self._hits.append(result)
                 if result.grade == HitGrade.PERFECT:
                     self._stats.perfect += 1
                     self._streak += 1
@@ -211,6 +218,8 @@ class PracticeView:
             if self._looping:
                 self._loop_count += 1
                 self._build_engine()
+            elif self._coach is not None:
+                return self._coach_action(completed=True)
             else:
                 return self._results()
 
@@ -225,6 +234,18 @@ class PracticeView:
         if offset_ms is not None:
             self._offsets.append(offset_ms)
             del self._offsets[:-300]
+
+    def _coach_action(self, completed: bool) -> ViewAction:
+        from keyfall.coach import CoachPass
+        self._update_accuracy()
+        result = CoachPass(self._coach, self._stats.accuracy_pct, self._clock, list(self._hits),
+                           completed=completed and self._stats.total_notes > 0)
+        return ViewAction(kind="switch", target="coach",
+                          context_patch={"results": result, "song": self._full_song,
+                                         "coach_step": None})
+
+    def _coach_label(self) -> str:
+        return f"Coach · {self._coach.label}" if self._coach is not None else ""
 
     def _first_bar(self) -> int:
         return self._section_start if self._looping else 1
@@ -284,4 +305,6 @@ class PracticeView:
             count_in=(math.ceil(-engine.position / beat_length(engine.song) - 1e-6)
                       if engine.position < 0 else None),
             metronome=metronome_mode(ctx),
+            mic_level=ctx.mic_input.level if mic_active(ctx) else None,
+            coach=self._coach_label() if hasattr(self, "_coach_label") else "",
         ))

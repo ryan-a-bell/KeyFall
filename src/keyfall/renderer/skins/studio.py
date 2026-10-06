@@ -136,7 +136,7 @@ class StudioSkin(Skin):
         if len(title) > 28:
             title = title[:27] + "…"
         text(surface, self.ui(700, 16), title, p.text, (48, 13))
-        sub = f"{frame.mode} · {'Wait mode' if frame.wait_mode else 'Real time'}"
+        sub = frame.coach or f"{frame.mode} · {'Wait mode' if frame.wait_mode else 'Real time'}"
         text(surface, self.ui(400, 12), sub, p.muted, (48, 35))
 
         tl = pygame.Rect(360, 30, 440, 4)
@@ -157,6 +157,8 @@ class StudioSkin(Skin):
         chips = [(f"{frame.tempo_scale:.0%}", "Tempo"),
                  ("Wait" if frame.wait_mode else "Live", "Mode"), (hands, "Hands"),
                  ({"off": "Off", "count-in": "Count-in", "on": "On"}[frame.metronome], "Click")]
+        if frame.mic_level is not None:
+            chips.insert(0, ("Mic", "Listening"))
         cx = w - 24
         for val, label in reversed(chips):
             fw = max(self.ui(700, 13).size(val)[0], self.ui(500, 10).size(label)[0]) + 22
@@ -164,6 +166,10 @@ class StudioSkin(Skin):
             rrect(surface, p.panel2, (cx, 12, fw, 40), 8)
             text(surface, self.ui(700, 13), val, p.text, (cx + fw // 2, 25), "center")
             text(surface, self.ui(500, 10), label, p.muted, (cx + fw // 2, 42), "center")
+            if label == "Listening" and frame.mic_level is not None:  # live level bar
+                lvl = pygame.Rect(cx + 6, 49, fw - 12, 3)
+                rrect(surface, p.line, lvl, 1)
+                rrect(surface, p.good, (lvl.x, lvl.y, int(lvl.w * frame.mic_level), 3), 1)
             cx -= 8
 
     def _draw_stats_card(self, surface, frame: PlayFrame, card: pygame.Rect) -> None:
@@ -254,6 +260,10 @@ class StudioSkin(Skin):
             pygame.draw.circle(surface, color, (x + 8, y + 9), 8, 2)
             pygame.draw.line(surface, color, (x + 8, y + 9), (x + 8, y + 4), 2)
             pygame.draw.line(surface, color, (x + 8, y + 9), (x + 12, y + 11), 2)
+        elif kind == "Coach":
+            pygame.draw.circle(surface, color, (x + 8, y + 9), 8, 2)
+            pygame.draw.circle(surface, color, (x + 8, y + 9), 4, 2)
+            pygame.draw.circle(surface, color, (x + 8, y + 9), 1)
         elif kind == "Free Play":
             for i in range(4):
                 rrect(surface, color, (x + i * 5, y + 3, 4, 13), 1, width=0 if i % 2 else 1)

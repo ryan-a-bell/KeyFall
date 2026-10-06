@@ -247,8 +247,11 @@ class NeonSkin(Skin):
         mode = "WAIT MODE" if frame.wait_mode else f"TEMPO {frame.tempo_scale:.0%}"
         hands = {Hand.BOTH: "BOTH HANDS", Hand.RIGHT: "RIGHT HAND",
                  Hand.LEFT: "LEFT HAND"}[frame.active_hand]
-        text(surface, self.label(600, 15), f"{frame.mode.upper()}   ·   {mode}   ·   {hands}",
-             p.muted, (104, y0 + 46))
+        sub = frame.coach.upper() if frame.coach else (
+            f"{frame.mode.upper()}   ·   {mode}   ·   {hands}")
+        if frame.mic_level is not None:
+            sub += "   ·   MIC"
+        text(surface, self.label(600, 15), sub, p.muted, (104, y0 + 46))
         acc = f"{st.accuracy_pct:.1f}% ACCURACY" if st.total_notes else "READY"
         text(surface, self.label(700, 15), acc, p.good, (104, y0 + 66))
         if frame.loop:

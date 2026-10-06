@@ -28,6 +28,8 @@ class DeviceSettings:
     midi_output: str = "none"  # keyboard to send sound/lights to: "none", "auto", or a name
     output_mode: str = "accompaniment"  # "accompaniment", "lights", or "both"
     light_channel: int = 1  # MIDI channel (1-16) for key-light notes
+    mic_input: str = "none"  # microphone for an acoustic piano: "none", "auto", or a name
+    mic_sensitivity: str = "normal"  # "low", "normal", "high"
 
 
 @dataclass

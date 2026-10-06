@@ -9,6 +9,7 @@ from __future__ import annotations
 import pygame
 
 from keyfall.accessibility import ColorPalette, NoteLabelMode
+from keyfall.mic_input import SENSITIVITIES
 from keyfall.midi_input import AUTO, NONE
 from keyfall.midi_output import MODE_ACCOMPANIMENT, MODE_BOTH, MODE_LIGHTS, OUTPUT_MODES
 from keyfall.renderer.skins import create_skin
@@ -38,9 +39,10 @@ _PALETTE_NAMES = {
     ColorPalette.MONOCHROME: "Monochrome",
 }
 
-(ROW_THEME, ROW_EFFECTS, ROW_LABELS, ROW_COLORS, ROW_METRONOME, ROW_MIDI, ROW_OUT,
- ROW_OUT_MODE, ROW_PIANO, ROW_GM, ROW_DONE) = range(11)
-ROW_COUNT = 11
+(ROW_THEME, ROW_EFFECTS, ROW_LABELS, ROW_COLORS, ROW_METRONOME, ROW_MIDI, ROW_MIC,
+ ROW_MIC_SENS, ROW_OUT, ROW_OUT_MODE, ROW_PIANO, ROW_GM, ROW_DONE) = range(13)
+ROW_COUNT = 13
+_SENS_NAMES = {"low": "Low (noisy room)", "normal": "Normal", "high": "High (quiet piano)"}
 _METRONOME_NAMES = {"off": "Off", "count-in": "Count-in only", "on": "Always"}
 _DOWNLOAD_ROWS = {ROW_PIANO: PIANO_DOWNLOAD, ROW_GM: GM_DOWNLOAD}
 _OUT_MODE_NAMES = {MODE_ACCOMPANIMENT: "Accompaniment", MODE_LIGHTS: "Key lights",
@@ -69,6 +71,44 @@ class SettingsView:
         context.skin  # ensure a UIState exists
         self._ports: list[str] = self._scan_ports()
         self._out_ports: list[str] = self._scan_out_ports()
+
+    def _mic_hub(self):
+        hub = self._context.mic_input if self._context else None
+        return hub if hasattr(hub, "select") else None
+
+    def _change_mic(self, step: int) -> None:
+        hub = self._mic_hub()
+        ui = self._context.ui
+        if hub is None or ui is None:
+            return
+        options = [NONE, AUTO, *hub.ports()]
+        current = ui.devices.mic_input
+        if current not in options:
+            options.insert(2, current)
+        ui.devices.mic_input = _cycle(options, current, step)
+        hub.set_sensitivity(ui.devices.mic_sensitivity)
+        hub.select(ui.devices.mic_input)
+
+    def _mic_rows(self) -> list[SettingsRow]:
+        hub = self._mic_hub()
+        devices = self._context.ui.devices
+        choice = devices.mic_input
+        value = {NONE: "Off", AUTO: "Default mic"}.get(choice, choice)
+        if hub is None:
+            status = "Microphone unavailable"
+        elif hub.connected:
+            hub.poll()  # keep analysing so the meter moves while Settings is open
+            bars = int(round(hub.level * 10))
+            status = f"Listening  {'|' * bars}{'.' * (10 - bars)}  play a note to test"
+        elif choice == NONE:
+            status = "For acoustic pianos (use headphones for song sound)"
+        else:
+            status = hub.error or "Not connected"
+        return [
+            SettingsRow("Microphone", value, status),
+            SettingsRow("Mic sensitivity", _SENS_NAMES[devices.mic_sensitivity],
+                        "Lower it if notes trigger by themselves; raise it if notes are missed"),
+        ]
 
     def _out_hub(self):
         hub = self._context.midi_output if self._context else None
@@ -150,6 +190,13 @@ class SettingsView:
             ui.practice.metronome = _cycle(list(METRONOME_MODES), ui.practice.metronome, step)
         elif row == ROW_MIDI:
             self._change_midi(step)
+        elif row == ROW_MIC:
+            self._change_mic(step)
+        elif row == ROW_MIC_SENS:
+            ui.devices.mic_sensitivity = _cycle(list(SENSITIVITIES), ui.devices.mic_sensitivity,
+                                                step)
+            if self._mic_hub() is not None:
+                self._mic_hub().set_sensitivity(ui.devices.mic_sensitivity)
         elif row == ROW_OUT:
             self._change_output(step)
         elif row == ROW_OUT_MODE:
@@ -198,6 +245,7 @@ class SettingsView:
             SettingsRow("Metronome", _METRONOME_NAMES[ui.practice.metronome],
                         "Count-in bar before each song or loop; Always clicks every beat"),
             self._midi_row(),
+            *self._mic_rows(),
             *self._output_rows(),
             self._download_row(PIANO_DOWNLOAD, "Grand piano for your playing (CC-BY 3.0)"),
             self._download_row(GM_DOWNLOAD, "Guitar, strings, bass, drums… for backing (MIT)"),

@@ -25,9 +25,9 @@ class MenuView:
         self._songs: list[MenuSong] = []
         self._details: dict[Path, SongDetails | None] = {}
         self._selected: int = 0
-        self._mode: int = 0  # 0=Play, 1=Practice, 2=Free Play
-        self._modes = ["Play", "Practice", "Free Play"]
-        self._mode_targets = ["waterfall", "practice", "freeplay"]
+        self._mode: int = 0  # index into _modes
+        self._modes = ["Play", "Practice", "Coach", "Free Play"]
+        self._mode_targets = ["waterfall", "practice", "coach", "freeplay"]
         self._hand_splits = list(HandSplitStrategy)
         self._hand_split: int = 0  # AUTO
         self._error: str = ""
@@ -163,6 +163,7 @@ class MenuView:
             ctx.audio_status or "Sound: off")
         midi = ctx.midi_input
         midi_ok = bool(getattr(midi, "connected", midi is not None))
+        mic_on = bool(getattr(ctx.mic_input, "connected", False))
         midi_name = getattr(midi, "port_name", None) or "Connected"
         out = ctx.midi_output
         out_ok = bool(getattr(out, "connected", False))
@@ -177,12 +178,16 @@ class MenuView:
             mode=self._mode,
             hand_split=self._hand_splits[self._hand_split].name.replace("_", " ").title(),
             audio_status=status,
-            midi_status=midi_name if midi_ok else "Not found · using computer keys",
-            midi_connected=midi_ok,
+            midi_status=(midi_name if midi_ok else
+                         f"Mic: {ctx.mic_input.port_name}" if mic_on else
+                         "Not found · using computer keys"),
+            midi_connected=midi_ok or mic_on,
             sound_ok=not status.startswith("Sound: off"),
             details=self._selected_details(),
             output_status=out_status,
             output_connected=out_ok,
+            mic_status=(f"Mic: {ctx.mic_input.port_name}"
+                        if getattr(ctx.mic_input, "connected", False) else ""),
             error=self._error,
             songs_dir=ctx.songs_dir,
             clock=self._clock,

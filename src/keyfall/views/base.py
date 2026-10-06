@@ -35,7 +35,9 @@ class ViewContext:
     songs_dir: str = ""
     audio_status: str = ""
     midi_output: Any = None  # MidiOutputHub: sound/lights sent to the keyboard
-    results: Any = None  # SessionResult for the results screen
+    mic_input: Any = None  # MicInputHub: acoustic piano through a microphone
+    results: Any = None  # SessionResult for the results screen (or a CoachPass)
+    coach_step: Any = None  # CoachStep: Practice runs one coach step then returns
     stem_folder: str = ""  # multi-stem song folder for the Stems screen
     next_view: str = ""  # where the Stems screen goes when you press Start
     ui: UIState | None = None  # shared by reference across context copies
@@ -166,7 +168,9 @@ class ViewManager:
             songs_dir=self._context.songs_dir,
             audio_status=self._context.audio_status,
             midi_output=self._context.midi_output,
+            mic_input=self._context.mic_input,
             results=self._context.results,
+            coach_step=self._context.coach_step,
             stem_folder=self._context.stem_folder,
             next_view=self._context.next_view,
             ui=self._context.ui,
@@ -249,3 +253,40 @@ def best_accuracy(ctx: ViewContext | None, title: str) -> float | None:
     except Exception:
         return None
     return row["accuracy_pct"] if row else None
+
+
+def mic_active(ctx: ViewContext | None) -> bool:
+    return bool(ctx is not None and getattr(ctx.mic_input, "connected", False))
+
+
+def poll_inputs(ctx: ViewContext | None, pressed: set[int], press_pos: dict[int, float],
+                position: float, expected: set[int] | None = None) -> None:
+    """Read every input source (MIDI, computer keys, microphone).
+
+    ``press_pos`` records the song position each note was really struck at,
+    corrected for the source's latency (the microphone hears notes ~60 ms late).
+    Notes from sources with ``echo = False`` (the microphone: an acoustic piano
+    makes its own sound) are not played through the synth.
+    """
+    if ctx is None:
+        return
+    if mic_active(ctx):
+        ctx.mic_input.set_expected(expected)
+    for source in (ctx.midi_input, ctx.keyboard_input, ctx.mic_input):
+        if source is None or (source is ctx.mic_input and not source.connected):
+            continue
+        echo = getattr(source, "echo", True)
+        latency = getattr(source, "latency_s", 0.0)
+        while True:
+            evt = source.poll()
+            if evt is None:
+                break
+            if evt.is_note_on:
+                pressed.add(evt.pitch)
+                press_pos[evt.pitch] = position - latency
+                if echo and ctx.audio:
+                    ctx.audio.note_on(evt.pitch, evt.velocity)
+            else:
+                pressed.discard(evt.pitch)
+                if echo and ctx.audio:
+                    ctx.audio.note_off(evt.pitch)
