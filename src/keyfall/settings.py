@@ -25,6 +25,9 @@ class AppearanceSettings:
 @dataclass
 class DeviceSettings:
     midi_input: str = "auto"  # "auto", "none", or a MIDI port name
+    midi_output: str = "none"  # keyboard to send sound/lights to: "none", "auto", or a name
+    output_mode: str = "accompaniment"  # "accompaniment", "lights", or "both"
+    light_channel: int = 1  # MIDI channel (1-16) for key-light notes
 
 
 def _read_all(path: Path) -> dict[str, Any]:

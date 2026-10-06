@@ -122,6 +122,9 @@ class NeonSkin(Skin):
                 beam = stretched_gradient((int(lw) + 10, hit_y), (0, 0, 0),
                                  mix(self.hand_color(hand), (0, 0, 0), 0.45))
                 surface.blit(beam, (int(x) - 5, 0), special_flags=pygame.BLEND_RGB_ADD)
+        self.draw_backing(surface, frame, layout, pygame.Rect(0, 0, w, hit_y), LOOK_AHEAD,
+                          (150, 110, 230), fill_alpha=30, edge_alpha=130,
+                          clip=pygame.Rect(0, top, w, hit_y - top))
         self._draw_notes(surface, frame, layout, hit_y, top)
         self._draw_hit_line(surface, frame, layout, hit_y, pressed)
         self.draw_keyboard(surface, layout, pressed)
@@ -363,6 +366,7 @@ class NeonSkin(Skin):
 
         # status chips
         for i, (label, ok) in enumerate((("MIDI", frame.midi_connected),
+                                         ("OUT", frame.output_connected),
                                          ("SOUND", frame.sound_ok))):
             x = 28 + i * 120
             rrect(surface, (255, 255, 255), (x, 26, 108, 34), 10, alpha=14)

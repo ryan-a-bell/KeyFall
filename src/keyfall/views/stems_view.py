@@ -7,7 +7,7 @@ import pygame
 from keyfall.models import Hand, Song
 from keyfall.renderer.skins.frames import SettingsRow, StemsFrame
 from keyfall.renderer.skins.keys import note_name
-from keyfall.stems import QUANTIZE_OPTIONS, ROLE_ORDER, StemRole, StemSet
+from keyfall.stems import GM_NAMES, QUANTIZE_OPTIONS, ROLE_ORDER, StemRole, StemSet
 from keyfall.views.base import ViewAction, ViewContext
 
 _SWATCH = {StemRole.RIGHT: "right", StemRole.LEFT: "left", StemRole.BOTH: "both",
@@ -103,6 +103,8 @@ class StemsView:
         for stem in self._set.stems:
             rng = stem.pitch_range
             detail = f"{stem.instrument} · {len(stem.notes)} notes"
+            if stem.role == StemRole.BACKING:
+                detail = f"Plays as {GM_NAMES.get(stem.program, 'piano')} · {len(stem.notes)} notes"
             if rng:
                 detail += f" · {note_name(rng[0])}–{note_name(rng[1])}"
             rows.append(SettingsRow(stem.label(self._set.folder.name), stem.role.value, detail,

@@ -34,10 +34,12 @@ class App:
         self._keyboard_input = KeyboardInput()
         ui = self._load_ui(theme)
         midi_input = self._open_midi(ui.devices.midi_input)
+        midi_output = self._open_midi_output(ui.devices.midi_output)
 
         context = ViewContext(
             screen_size=(WINDOW_WIDTH, WINDOW_HEIGHT),
             midi_input=midi_input,
+            midi_output=midi_output,
             audio=audio,
             progress=progress,
             plugin_manager=plugin_manager,
@@ -88,6 +90,9 @@ class App:
     def _cleanup(self) -> None:
         while self.views.active_view:
             self.views.pop()
+        out = self.views._context.midi_output
+        if out is not None:
+            out.close()
 
     @staticmethod
     def _open_midi(choice: str):
@@ -98,15 +103,32 @@ class App:
         return hub
 
     @staticmethod
+    def _open_midi_output(choice: str):
+        """Where song sound / key lights go on the keyboard (off unless chosen)."""
+        from keyfall.midi_output import MidiOutputHub
+        hub = MidiOutputHub(choice=choice)
+        hub.select(choice)
+        return hub
+
+    @staticmethod
     def _try_audio(soundfont: str | None = None):
         """Return (AudioEngine or None, human-readable status for the menu)."""
         try:
-            from keyfall.soundfont import find_soundfont
+            from keyfall.soundfont import find_gm_soundfont, find_soundfont
             path = find_soundfont(soundfont)
             if path is None:
                 return None, "Sound: off (no SoundFont; run `keyfall --download-soundfont`)"
             from keyfall.audio import AudioEngine
-            return AudioEngine(path), f"Sound: {path.name}"
+            engine = AudioEngine(path)
+            status = f"Sound: {path.name}"
+            gm = find_gm_soundfont(exclude=path)
+            if gm is not None:
+                try:
+                    engine.load_gm_soundfont(gm)
+                    status += f" + {gm.name}"
+                except RuntimeError:
+                    pass
+            return engine, status
         except Exception as exc:
             return None, f"Sound: off ({exc})"
 

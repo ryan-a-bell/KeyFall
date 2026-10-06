@@ -34,12 +34,14 @@ _RIGHT_NAME_HINTS = ("right", "rh", "r.h.", "treble", "melody", "lead")
 def load_song(
     file_path: str | Path,
     hand_split: HandSplitStrategy = HandSplitStrategy.AUTO,
+    keep_drums: bool = False,
 ) -> Song:
     """Load a MIDI or MusicXML file and return a Song.
 
     Args:
         file_path: Path to a .mid, .midi, .xml, .mxl, or .musicxml file.
         hand_split: Strategy for assigning notes to hands.
+        keep_drums: Keep GM percussion (channel 10) notes, e.g. for a drum stem.
 
     Raises:
         SongLoadError: If the file cannot be parsed.
@@ -48,7 +50,7 @@ def load_song(
     suffix = path.suffix.lower()
     try:
         if suffix in (".mid", ".midi"):
-            return _load_midi(path, hand_split)
+            return _load_midi(path, hand_split, keep_drums)
         elif suffix in (".xml", ".mxl", ".musicxml"):
             return _load_musicxml(path)
         else:
@@ -167,7 +169,11 @@ def _ticks_to_seconds(tick: int, tempo_map: list[tuple[int, int]], tpb: int) -> 
     return seconds + mido.tick2second(tick - prev_tick, tpb, prev_tempo)
 
 
-def _load_midi(path: Path, hand_split: HandSplitStrategy = HandSplitStrategy.AUTO) -> Song:
+def _load_midi(
+    path: Path,
+    hand_split: HandSplitStrategy = HandSplitStrategy.AUTO,
+    keep_drums: bool = False,
+) -> Song:
     mid = mido.MidiFile(str(path))
     tpb = mid.ticks_per_beat
     song = Song(title=path.stem, ticks_per_beat=tpb)
@@ -199,7 +205,7 @@ def _load_midi(path: Path, hand_split: HandSplitStrategy = HandSplitStrategy.AUT
             if msg.type == "program_change" and info.program is None:
                 info.program = msg.program
             elif msg.type in ("note_on", "note_off"):
-                if msg.channel == DRUM_CHANNEL:
+                if msg.channel == DRUM_CHANNEL and not keep_drums:
                     continue
                 key = (msg.channel, msg.note)
                 if key in pending:  # note_off, or retrigger of a held note

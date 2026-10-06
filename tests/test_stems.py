@@ -4,7 +4,7 @@ import json
 
 import mido
 
-from keyfall.models import Hand, NoteEvent
+from keyfall.models import PERCUSSION, Hand, NoteEvent
 from keyfall.stems import StemRole, StemSet, cleanup, guess_instrument, quantize
 
 
@@ -51,7 +51,7 @@ def test_guess_instrument_from_names():
 
 def test_band_without_piano_bass_left_lead_right_rest_backing(tmp_path):
     stems = {s.name: s.role for s in StemSet.load(_band(tmp_path)).stems}
-    assert stems == {"Bass": StemRole.LEFT, "Drums": StemRole.OFF,
+    assert stems == {"Bass": StemRole.LEFT, "Drums": StemRole.BACKING,
                      "Guitar": StemRole.BACKING, "Lead Synth": StemRole.RIGHT}
 
 
@@ -66,16 +66,20 @@ def test_combine_assigns_hands_backing_and_shared_timeline(tmp_path):
     assert song.title == "Neon Rain"
     assert {n.hand for n in song.notes if n.pitch == 36} == {Hand.LEFT}
     assert {n.hand for n in song.notes if n.pitch >= 72} == {Hand.RIGHT}
-    assert [n.pitch for n in song.backing] == [64] * 8  # guitar heard, not played
-    assert len(song.notes) == 16  # drums off
+    guitar = [n.pitch for n in song.backing if song.backing_programs[n.track] == 25]
+    assert guitar == [64] * 8  # heard, not played
+    drums = [n for n in song.backing if song.backing_programs[n.track] == PERCUSSION]
+    assert len(drums) == 8  # drum stem plays on the GM kit
+    assert len(song.notes) == 16
     assert abs(song.duration - 4.0) < 0.01  # 8 beats at 120 BPM
 
 
 def test_roles_and_options_are_saved_in_the_folder(tmp_path):
     folder = _band(tmp_path)
     stem_set = StemSet.load(folder)
-    guitar = next(s for s in stem_set.stems if s.name == "Guitar")
-    guitar.role = StemRole.OFF
+    for stem in stem_set.stems:
+        if stem.name in ("Guitar", "Drums"):
+            stem.role = StemRole.OFF
     stem_set.clean = False
     stem_set.quantize_division = 16
     stem_set.save()
@@ -107,24 +111,47 @@ def test_quantize_snaps_to_sixteenth_grid():
 
 
 class _FakeAudio:
-    def __init__(self):
+    def __init__(self, drums=True):
         self.played = []
+        self.instruments = {}
+        self.drums = drums
+
+    def set_instrument(self, channel, program, bank=0):
+        if bank == 128 and not self.drums:
+            return False
+        self.instruments[channel] = (bank, program)
+        return True
 
     def play_note_event(self, note, channel=0):
         self.played.append((note.pitch, channel))
 
 
-def test_backing_player_plays_once_and_rewinds_on_restart(tmp_path):
+def test_backing_player_uses_instrument_channels_and_rewinds(tmp_path):
     from keyfall.playback import BackingPlayer
     song = StemSet.load(_band(tmp_path)).combine()
     audio = _FakeAudio()
     player = BackingPlayer(song)
     for i in range(1, 9):
         player.update(i * 0.25, audio)
-    assert len(audio.played) == 5  # guitar notes at 0, .5, 1, 1.5, 2 s
-    assert {ch for _, ch in audio.played} == {BackingPlayer.CHANNEL}
+    by_channel = {}
+    for pitch, ch in audio.played:
+        by_channel.setdefault(ch, []).append(pitch)
+    assert audio.instruments[9] == (128, 0)  # drum kit on channel 10
+    guitar_ch = next(c for c, (b, p) in audio.instruments.items() if p == 25)
+    assert guitar_ch not in (0, 9) and by_channel[guitar_ch] == [64] * 5
+    assert by_channel[9] == [36] * 5
+    before = len(audio.played)
     player.update(0.0, audio)  # restart
-    assert len(audio.played) == 6
+    assert len(audio.played) == before + 2  # first guitar note + first kick again
+
+
+def test_drums_are_muted_without_a_drum_kit(tmp_path):
+    from keyfall.playback import BackingPlayer
+    song = StemSet.load(_band(tmp_path)).combine()
+    audio = _FakeAudio(drums=False)
+    player = BackingPlayer(song)
+    player.update(3.0, audio)
+    assert all(ch != 9 for _, ch in audio.played)
 
 
 def test_menu_to_stems_to_game_and_back(tmp_path):

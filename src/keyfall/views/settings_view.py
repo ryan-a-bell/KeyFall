@@ -10,6 +10,7 @@ import pygame
 
 from keyfall.accessibility import ColorPalette, NoteLabelMode
 from keyfall.midi_input import AUTO, NONE
+from keyfall.midi_output import MODE_ACCOMPANIMENT, MODE_BOTH, MODE_LIGHTS, OUTPUT_MODES
 from keyfall.renderer.skins import create_skin
 from keyfall.renderer.skins.demo import demo_frame, demo_song
 from keyfall.renderer.skins.frames import SettingsFrame, SettingsRow
@@ -36,8 +37,11 @@ _PALETTE_NAMES = {
     ColorPalette.MONOCHROME: "Monochrome",
 }
 
-ROW_THEME, ROW_EFFECTS, ROW_LABELS, ROW_COLORS, ROW_MIDI, ROW_DONE = range(6)
-ROW_COUNT = 6
+(ROW_THEME, ROW_EFFECTS, ROW_LABELS, ROW_COLORS, ROW_MIDI, ROW_OUT, ROW_OUT_MODE,
+ ROW_DONE) = range(8)
+ROW_COUNT = 8
+_OUT_MODE_NAMES = {MODE_ACCOMPANIMENT: "Accompaniment", MODE_LIGHTS: "Key lights",
+                   MODE_BOTH: "Both"}
 
 
 def _cycle(options: list, current, step: int):
@@ -61,6 +65,28 @@ class SettingsView:
         self._context = context
         context.skin  # ensure a UIState exists
         self._ports: list[str] = self._scan_ports()
+        self._out_ports: list[str] = self._scan_out_ports()
+
+    def _out_hub(self):
+        hub = self._context.midi_output if self._context else None
+        return hub if hasattr(hub, "select") else None
+
+    def _scan_out_ports(self) -> list[str]:
+        hub = self._out_hub()
+        return hub.ports() if hub else []
+
+    def _change_output(self, step: int) -> None:
+        hub = self._out_hub()
+        ui = self._context.ui
+        if hub is None or ui is None:
+            return
+        self._out_ports = self._scan_out_ports()
+        options = [NONE, *self._out_ports]
+        current = ui.devices.midi_output
+        if current not in options and current != AUTO:
+            options.insert(1, current)
+        ui.devices.midi_output = _cycle(options, current, step)
+        hub.select(ui.devices.midi_output)
 
     def _hub(self):
         hub = self._context.midi_input if self._context else None
@@ -119,6 +145,10 @@ class SettingsView:
             acc.color_palette = _cycle(_PALETTES, acc.get_palette(), step).name
         elif row == ROW_MIDI:
             self._change_midi(step)
+        elif row == ROW_OUT:
+            self._change_output(step)
+        elif row == ROW_OUT_MODE:
+            ui.devices.output_mode = _cycle(list(OUTPUT_MODES), ui.devices.output_mode, step)
         else:
             return
         try:
@@ -145,6 +175,7 @@ class SettingsView:
             SettingsRow("Hand colors", _PALETTE_NAMES[acc.get_palette()],
                         "Colorblind-friendly palettes override the theme"),
             self._midi_row(),
+            *self._output_rows(),
             SettingsRow("Done", "", "", adjustable=False),
         ]
 
@@ -162,6 +193,32 @@ class SettingsView:
             found = len(self._ports)
             status = hub.error or f"{found} device{'s' if found != 1 else ''} found"
         return SettingsRow("MIDI keyboard", value, status)
+
+    def _output_rows(self) -> list[SettingsRow]:
+        hub = self._out_hub()
+        devices = self._context.ui.devices
+        choice = devices.midi_output
+        value = {NONE: "Off", AUTO: "Auto"}.get(choice, choice)
+        if hub is None:
+            status = "MIDI unavailable"
+        elif hub.connected:
+            status = f"Sending to: {hub.port_name}"
+        elif choice == NONE:
+            found = len(self._out_ports)
+            status = f"Song sound stays on the computer · {found} output" + \
+                ("s" if found != 1 else "") + " found"
+        else:
+            status = hub.error or "Not connected"
+        mode = devices.output_mode
+        mode_desc = {
+            MODE_ACCOMPANIMENT: "Backing and the auto-played hand play on the keyboard",
+            MODE_LIGHTS: f"Light up the next keys to press (channel {devices.light_channel})",
+            MODE_BOTH: f"Accompaniment, plus key lights on channel {devices.light_channel}",
+        }[mode]
+        return [
+            SettingsRow("Keyboard output", value, status),
+            SettingsRow("Send to keyboard", _OUT_MODE_NAMES[mode], mode_desc),
+        ]
 
     def _preview_surface(self) -> pygame.Surface:
         """Render the current settings onto a demo song (cached until settings change)."""

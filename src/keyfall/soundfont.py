@@ -72,6 +72,36 @@ def find_soundfont(explicit: str | Path | None = None) -> Path | None:
     return None
 
 
+GM_ENV_VAR = "KEYFALL_GM_SOUNDFONT"
+_GM_HINTS = ("gm", "general", "fluidr3", "musescore", "timgm", "generaluser", "arachno")
+
+
+def find_gm_soundfont(exclude: Path | None = None) -> Path | None:
+    """A General MIDI SoundFont for backing instruments (guitar, strings, drums...).
+
+    Used alongside the main (often piano-only) SoundFont. Search order:
+    $KEYFALL_GM_SOUNDFONT, GM-looking files in the user folder, system paths.
+    """
+    exclude = exclude.resolve() if exclude else None
+
+    def ok(path: Path) -> bool:
+        return path.is_file() and (exclude is None or path.resolve() != exclude)
+
+    env = os.environ.get(GM_ENV_VAR)
+    if env and ok(Path(env)):
+        return Path(env)
+    user_dir = user_soundfont_dir()
+    if user_dir.is_dir():
+        for p in sorted(user_dir.iterdir()):
+            if p.suffix.lower() in _EXTENSIONS and any(h in p.name.lower() for h in _GM_HINTS):
+                if ok(p):
+                    return p
+    for path in _SYSTEM_PATHS:
+        if ok(Path(path)):
+            return Path(path)
+    return None
+
+
 def download_default_soundfont(
     dest_dir: Path | None = None, url: str = DEFAULT_SOUNDFONT_URL
 ) -> Path:

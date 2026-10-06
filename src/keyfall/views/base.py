@@ -34,6 +34,7 @@ class ViewContext:
     tempo_scale: float = 1.0
     songs_dir: str = ""
     audio_status: str = ""
+    midi_output: Any = None  # MidiOutputHub: sound/lights sent to the keyboard
     stem_folder: str = ""  # multi-stem song folder for the Stems screen
     next_view: str = ""  # where the Stems screen goes when you press Start
     ui: UIState | None = None  # shared by reference across context copies
@@ -163,6 +164,7 @@ class ViewManager:
             tempo_scale=self._context.tempo_scale,
             songs_dir=self._context.songs_dir,
             audio_status=self._context.audio_status,
+            midi_output=self._context.midi_output,
             stem_folder=self._context.stem_folder,
             next_view=self._context.next_view,
             ui=self._context.ui,
@@ -197,3 +199,35 @@ def layout_regions(
 
     regions["center"] = remaining
     return regions
+
+
+def update_outputs(ctx: ViewContext | None, outputs, engine, newly_active):
+    """Route the auto-played hand, backing tracks and key lights for a gameplay view.
+
+    Returns the (possibly new) SongOutputs to keep for the next frame.
+    """
+    from keyfall.playback import SongOutputs
+    if ctx is None:
+        return outputs
+    if outputs is None or outputs.song is not engine.song:
+        if outputs is not None:
+            stop_outputs(ctx, outputs)
+        outputs = SongOutputs(engine.song)
+    mode, channel = _output_prefs(ctx)
+    outputs.update(engine, newly_active, ctx.audio, ctx.midi_output, mode, channel)
+    return outputs
+
+
+def stop_outputs(ctx: ViewContext | None, outputs) -> None:
+    if ctx is None or outputs is None:
+        return
+    _mode, channel = _output_prefs(ctx)
+    out = ctx.midi_output if getattr(ctx.midi_output, "connected", False) else None
+    outputs.stop(ctx.audio, out, channel)
+
+
+def _output_prefs(ctx: ViewContext) -> tuple[str, int]:
+    devices = ctx.ui.devices if ctx.ui is not None else None
+    if devices is None:
+        return "accompaniment", 0
+    return devices.output_mode, max(0, min(15, devices.light_channel - 1))

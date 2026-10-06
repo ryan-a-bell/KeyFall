@@ -82,6 +82,8 @@ class MenuFrame:
     midi_connected: bool
     sound_ok: bool
     details: SongDetails | None = None
+    output_status: str = "Off"
+    output_connected: bool = False
     error: str = ""
     songs_dir: str = ""
     clock: float = 0.0

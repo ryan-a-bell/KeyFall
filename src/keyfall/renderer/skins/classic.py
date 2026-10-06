@@ -29,6 +29,9 @@ class ClassicSkin(Skin):
         if frame.show_notation:
             self.draw_notation_panel(surface, frame, pygame.Rect(0, 44, w, 180))
 
+        self.draw_backing(surface, frame, layout, pygame.Rect(0, 0, w, kb_y), LOOK_AHEAD,
+                          (110, 110, 130), fill_alpha=60, edge_alpha=0,
+                          clip=pygame.Rect(0, top, w, kb_y - top))
         pps = kb_y / LOOK_AHEAD
         label_font = self.ui(700, 11)
         for n in self.note_index(frame.song).window(frame.position - 0.5,

@@ -91,14 +91,15 @@ def fit_range(song: Song | None, min_span: int = 36) -> tuple[int, int]:
 class NoteIndex:
     """Fast lookup of notes overlapping a time window (songs are sorted by start)."""
 
-    def __init__(self, song: Song) -> None:
+    def __init__(self, song: Song, notes: list[NoteEvent] | None = None) -> None:
         self.song = song
-        self.starts = [n.start_time for n in song.notes]
-        self.max_dur = max((n.duration for n in song.notes), default=0.0)
+        self.notes = song.notes if notes is None else notes
+        self.starts = [n.start_time for n in self.notes]
+        self.max_dur = max((n.duration for n in self.notes), default=0.0)
 
     def window(self, t0: float, t1: float) -> list[NoteEvent]:
         """Notes with any part in [t0, t1]."""
-        notes = self.song.notes
+        notes = self.notes
         i = bisect_right(self.starts, t0 - self.max_dur)
         j = bisect_right(self.starts, t1)
         return [n for n in notes[i:j] if n.start_time + n.duration >= t0]

@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
-from keyfall.models import Hand, NoteEvent, Song, TempoChange
+from keyfall.models import PERCUSSION, Hand, NoteEvent, Song, TempoChange
 from keyfall.song_loader import HandSplitStrategy, load_song
 
 CONFIG_NAME = "keyfall-stems.json"
@@ -60,6 +60,24 @@ _INSTRUMENTS: list[tuple[tuple[str, ...], str]] = [
 ]
 
 
+# General MIDI program used when a stem plays as backing
+GM_PROGRAMS: dict[str, int] = {
+    "Drums": PERCUSSION,
+    "Bass": 33,  # Electric Bass (finger)
+    "Piano": 0,  # Acoustic Grand Piano
+    "Vocals": 53,  # Voice Oohs
+    "Lead": 81,  # Lead 2 (sawtooth)
+    "Guitar": 25,  # Acoustic Guitar (steel)
+    "Strings": 48,  # String Ensemble 1
+    "Synth / pad": 89,  # Pad 2 (warm)
+    "Other": 0,
+}
+GM_NAMES: dict[int, str] = {
+    PERCUSSION: "Drum kit", 0: "Grand piano", 25: "Steel guitar", 33: "Finger bass",
+    48: "String ensemble", 53: "Voice oohs", 81: "Saw lead", 89: "Warm pad",
+}
+
+
 def guess_instrument(name: str) -> str:
     lowered = name.lower()
     for keywords, label in _INSTRUMENTS:
@@ -90,6 +108,10 @@ class Stem:
         return name
 
     @property
+    def program(self) -> int:
+        return GM_PROGRAMS.get(self.instrument, 0)
+
+    @property
     def mean_pitch(self) -> float:
         return sum(n.pitch for n in self.notes) / len(self.notes) if self.notes else 0.0
 
@@ -103,14 +125,14 @@ class Stem:
 def guess_roles(stems: list[Stem]) -> None:
     """Pick sensible default roles in place.
 
-    - Drums and empty stems are off.
+    - Empty stems are off; drums are backing (heard, never played).
     - A piano stem is played with both hands; everything else becomes backing.
     - Otherwise bass is the left hand and the lead/vocal line the right hand
       (or, with no obvious lead, the highest-pitched remaining stem).
     """
     for s in stems:
-        s.role = StemRole.OFF if (s.instrument == "Drums" or not s.notes) else StemRole.BACKING
-    live = [s for s in stems if s.role != StemRole.OFF]
+        s.role = StemRole.BACKING if s.notes else StemRole.OFF
+    live = [s for s in stems if s.role != StemRole.OFF and s.instrument != "Drums"]
     piano = next((s for s in live if s.instrument == "Piano"), None)
     if piano:
         piano.role = StemRole.BOTH
@@ -180,7 +202,7 @@ class StemSet:
                        key=lambda f: f.name.lower())
         for f in files:
             try:
-                song = load_song(f, HandSplitStrategy.BY_PITCH)
+                song = load_song(f, HandSplitStrategy.BY_PITCH, keep_drums=True)
                 notes = song.notes
                 bpm = song.tempo_changes[0].bpm if song.tempo_changes else 120.0
             except Exception:
@@ -227,12 +249,14 @@ class StemSet:
             if stem.role == StemRole.OFF:
                 continue
             notes = stem.notes
-            if self.clean:
+            if stem.role == StemRole.BACKING:
+                song.backing_programs[index] = stem.program
+            if self.clean and stem.instrument != "Drums":
                 cleaned = cleanup(notes)
                 removed += len(notes) - len(cleaned)
                 notes = cleaned
             notes = quantize(notes, bpm, self.quantize_division)
-            if self.quantize_division and self.clean:
+            if self.quantize_division and self.clean and stem.instrument != "Drums":
                 notes = cleanup(notes)  # snapping can create new duplicates
             for n in notes:
                 note = NoteEvent(n.pitch, n.start_time, n.duration, n.velocity, n.hand, index)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from keyfall.models import Hand, NoteEvent, Song
+from keyfall.models import PERCUSSION, Hand, NoteEvent, Song
 
 
 @dataclass
@@ -238,23 +238,50 @@ def select_section(
 
 
 class BackingPlayer:
-    """Plays a song's backing notes through the audio engine as playback advances.
+    """Plays a song's backing notes as playback advances, each track on its own
+    channel and instrument, to the computer synth and/or the keyboard's MIDI output.
 
     Handles restarts and seeks: if the position jumps backwards, it rewinds.
     """
 
-    CHANNEL = 1
     VOLUME = 0.7
+    _FREE_CHANNELS = [c for c in range(1, 16) if c != 9]  # 0 = player piano, 9 = drums
 
     def __init__(self, song: Song) -> None:
         self.notes = song.backing
         self._starts = [n.start_time for n in self.notes]
         self._index = 0
         self._last_position = 0.0
+        self.channels: dict[int, int] = {}  # track -> MIDI channel
+        self.programs: dict[int, int] = {}  # channel -> GM program (PERCUSSION for drums)
+        free = iter(self._FREE_CHANNELS)
+        for track in sorted({n.track for n in self.notes}):
+            program = song.backing_programs.get(track, 0)
+            channel = 9 if program == PERCUSSION else next(free, 15)
+            self.channels[track] = channel
+            self.programs[channel] = program
+        self._ready: set[int] = set()  # id() of outputs already given program changes
+        self._muted: set[int] = set()  # synth channels with no usable instrument (drums)
 
-    def update(self, position: float, audio) -> None:
+    def _setup(self, audio, midi_out) -> None:
+        if audio is not None and id(audio) not in self._ready:
+            for channel, program in self.programs.items():
+                if program == PERCUSSION:
+                    if audio.set_instrument(channel, 0, bank=128) is False:
+                        self._muted.add(channel)  # no drum kit: silence beats piano thumps
+                else:
+                    audio.set_instrument(channel, program)
+            self._ready.add(id(audio))
+        if midi_out is not None and id(midi_out) not in self._ready:
+            for channel, program in self.programs.items():
+                if program != PERCUSSION:
+                    midi_out.program_change(channel, program)
+            self._ready.add(id(midi_out))
+
+    def update(self, position: float, audio, midi_out=None) -> None:
         if not self.notes:
             return
+        self._setup(audio, midi_out)
         if position < self._last_position:
             from bisect import bisect_left
             self._index = bisect_left(self._starts, position)
@@ -262,7 +289,81 @@ class BackingPlayer:
         while self._index < len(self.notes) and self.notes[self._index].start_time <= position:
             note = self.notes[self._index]
             self._index += 1
-            if audio is not None and note.start_time >= position - 0.25:  # skip stale notes
-                quiet = NoteEvent(note.pitch, note.start_time, note.duration,
-                                  max(1, int(note.velocity * self.VOLUME)), note.hand, note.track)
-                audio.play_note_event(quiet, channel=self.CHANNEL)
+            if note.start_time < position - 0.25:  # skip stale notes after a seek
+                continue
+            quiet = NoteEvent(note.pitch, note.start_time, note.duration,
+                              max(1, int(note.velocity * self.VOLUME)), note.hand, note.track)
+            channel = self.channels.get(note.track, 1)
+            if audio is not None and channel not in self._muted:
+                audio.play_note_event(quiet, channel=channel)
+            if midi_out is not None:
+                midi_out.play_note_event(quiet, channel=channel)
+
+
+class KeyLights:
+    """Lights the keys the player should press next, for light-up keyboards.
+
+    Sends a note-on (velocity 1) on ``channel`` a little before each note
+    arrives and a note-off when it ends. Many light-up keyboards light keys
+    for notes received on a specific channel; the channel is configurable.
+    """
+
+    LEAD_TIME = 0.5  # seconds before the note reaches the hit line
+
+    def __init__(self) -> None:
+        self.lit: set[int] = set()
+
+    def update(self, song: Song, position: float, active_hand: Hand, midi_out,
+               channel: int) -> None:
+        wanted = {
+            n.pitch for n in song.notes
+            if n.start_time - self.LEAD_TIME <= position < n.start_time + n.duration
+            and (active_hand == Hand.BOTH or n.hand == active_hand)
+        } if midi_out is not None else set()
+        for pitch in wanted - self.lit:
+            midi_out.note_on(pitch, 1, channel)
+        for pitch in self.lit - wanted:
+            if midi_out is not None:
+                midi_out.note_off(pitch, channel)
+        self.lit = wanted
+
+    def clear(self, midi_out, channel: int) -> None:
+        if midi_out is not None:
+            for pitch in self.lit:
+                midi_out.note_off(pitch, channel)
+        self.lit = set()
+
+
+class SongOutputs:
+    """Everything a gameplay view sends besides the player's own notes:
+    the auto-played hand, backing tracks, and key lights."""
+
+    def __init__(self, song: Song) -> None:
+        self.song = song
+        self.backing = BackingPlayer(song)
+        self.lights = KeyLights()
+
+    def update(self, engine: PlaybackEngine, newly_active: list[NoteEvent], audio,
+               midi_out=None, mode: str = "accompaniment", light_channel: int = 0) -> None:
+        out = midi_out if (midi_out is not None and getattr(midi_out, "connected", True)) \
+            else None
+        accompaniment = out if mode in ("accompaniment", "both") else None
+        lights = out if mode in ("lights", "both") else None
+        for note in newly_active:  # the hand the player isn't practicing
+            if engine.active_hand != Hand.BOTH and note.hand != engine.active_hand:
+                for target in (audio, accompaniment):
+                    if target is not None:
+                        target.play_note_event(note)
+        self.backing.update(engine.position, audio, accompaniment)
+        if lights is not None or self.lights.lit:
+            self.lights.update(engine.song, engine.position, engine.active_hand, lights,
+                               light_channel)
+        for target in (audio, out):
+            if target is not None:
+                target.flush_pending_offs()
+
+    def stop(self, audio, midi_out=None, light_channel: int = 0) -> None:
+        self.lights.clear(midi_out, light_channel)
+        for target in (audio, midi_out):
+            if target is not None:
+                target.all_notes_off()

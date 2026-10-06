@@ -56,6 +56,11 @@ class Song:
     duration: float = 0.0  # total length in seconds
     # Accompaniment that is heard but not played or scored (e.g. Suno backing stems)
     backing: list[NoteEvent] = field(default_factory=list)
+    # GM program per backing track (NoteEvent.track); PERCUSSION = drum kit
+    backing_programs: dict[int, int] = field(default_factory=dict)
+
+
+PERCUSSION = -1  # backing_programs value meaning "GM drum kit on channel 10"
 
 
 @dataclass

@@ -156,6 +156,12 @@ class MenuView:
         midi = ctx.midi_input
         midi_ok = bool(getattr(midi, "connected", midi is not None))
         midi_name = getattr(midi, "port_name", None) or "Connected"
+        out = ctx.midi_output
+        out_ok = bool(getattr(out, "connected", False))
+        mode = ctx.ui.devices.output_mode if ctx.ui else "accompaniment"
+        mode_name = {"accompaniment": "accompaniment", "lights": "key lights",
+                     "both": "sound + lights"}.get(mode, mode)
+        out_status = f"{out.port_name} · {mode_name}" if out_ok else "Off · sound on computer"
         ctx.skin.draw_menu(surface, MenuFrame(
             songs=self._songs,
             selected=self._selected,
@@ -167,6 +173,8 @@ class MenuView:
             midi_connected=midi_ok,
             sound_ok=not status.startswith("Sound: off"),
             details=self._selected_details(),
+            output_status=out_status,
+            output_connected=out_ok,
             error=self._error,
             songs_dir=ctx.songs_dir,
             clock=self._clock,

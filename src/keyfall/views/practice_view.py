@@ -7,9 +7,9 @@ import pygame
 from keyfall.accessibility import NoteLabelMode
 from keyfall.evaluator import evaluate_hit
 from keyfall.models import Hand, HitGrade, NoteEvent, SessionStats, Song
-from keyfall.playback import BackingPlayer, PlaybackEngine, select_section
+from keyfall.playback import PlaybackEngine, SongOutputs, select_section
 from keyfall.renderer.skins.frames import PlayFrame
-from keyfall.views.base import ViewAction, ViewContext
+from keyfall.views.base import ViewAction, ViewContext, stop_outputs, update_outputs
 
 
 class PracticeView:
@@ -28,7 +28,7 @@ class PracticeView:
         self._judgement: HitGrade | None = None
         self._judgement_at: float = -99.0
         self._offsets: list[float] = []
-        self._backing: BackingPlayer | None = None
+        self._outputs: SongOutputs | None = None
         self._show_notation: bool = True
         self._looping: bool = False
         self._section_start: int = 1
@@ -67,6 +67,8 @@ class PracticeView:
         self._engine.wait_mode = True  # default for practice
 
     def on_exit(self) -> None:
+        stop_outputs(self._context, self._outputs)
+        self._outputs = None
         if self._context and self._context.audio:
             self._context.audio.all_notes_off()
         if self._context and self._context.progress:
@@ -142,19 +144,12 @@ class PracticeView:
                             self._context.audio.note_off(evt.pitch)
 
         newly_active = engine.update(dt, self._pressed)
-        if self._backing is None or self._backing.notes is not engine.song.backing:
-            self._backing = BackingPlayer(engine.song)
-        self._backing.update(engine.position, self._context.audio if self._context else None)
-        if self._context and self._context.audio:
-            self._context.audio.flush_pending_offs()  # release auto-played notes
+        # auto-played hand, backing tracks, key lights (synth and/or keyboard)
+        self._outputs = update_outputs(self._context, self._outputs, engine, newly_active)
 
         for note in newly_active:
             if engine.active_hand == Hand.BOTH or note.hand == engine.active_hand:
                 self._pending_notes.append(note)
-            # Auto-play inactive hand
-            if self._context and self._context.audio:
-                if engine.active_hand != Hand.BOTH and note.hand != engine.active_hand:
-                    self._context.audio.play_note_event(note)
 
         still_pending: list[NoteEvent] = []
         for note in self._pending_notes:

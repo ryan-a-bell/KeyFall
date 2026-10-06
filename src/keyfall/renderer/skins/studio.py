@@ -62,6 +62,8 @@ class StudioSkin(Skin):
 
         surface.blit(vgradient((w, h), p.bg, p.bg2), (0, 0))
         self._draw_lanes(surface, frame, layout, area)
+        self.draw_backing(surface, frame, layout, area, LOOK_AHEAD, (160, 168, 184),
+                          fill_alpha=36, edge_alpha=110)
         self._draw_notes(surface, frame, layout, area)
         pygame.draw.line(surface, (255, 255, 255), (0, area.bottom - 1), (w, area.bottom - 1))
         self.draw_keyboard(surface, layout, self.pressed_hands(frame, layout))
@@ -283,11 +285,13 @@ class StudioSkin(Skin):
                 text(surface, self.ui(500, 11), hint, p.faint, (216, y + 3), "topright")
             y += 46
 
-        tracked(surface, self.ui(600, 11), "DEVICES", p.faint, (24, h - 196), 1)
         devices = [("MIDI keyboard", frame.midi_status, frame.midi_connected),
+                   ("Keyboard output", frame.output_status, frame.output_connected),
                    ("Sound", frame.audio_status.removeprefix("Sound: "), frame.sound_ok)]
+        top = h - 34 - len(devices) * 62
+        tracked(surface, self.ui(600, 11), "DEVICES", p.faint, (24, top - 24), 1)
         for i, (title, sub, ok) in enumerate(devices):
-            cy = h - 172 + i * 62
+            cy = top + i * 62
             rrect(surface, p.panel2, (12, cy, 212, 52), 10)
             pygame.draw.circle(surface, p.good if ok else p.faint, (32, cy + 26), 5)
             text(surface, self.ui(600, 14), title, p.text if ok else p.muted, (48, cy + 9))

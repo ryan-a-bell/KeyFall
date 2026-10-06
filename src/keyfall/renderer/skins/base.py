@@ -15,7 +15,7 @@ from keyfall.accessibility import (
     ColorPalette,
     NoteLabelMode,
 )
-from keyfall.models import Hand, Song
+from keyfall.models import PERCUSSION, Hand, Song
 from keyfall.notation import render_notation
 from keyfall.renderer import fonts
 from keyfall.renderer.draw import Color, chevron, mix, rrect, text, tracked
@@ -44,6 +44,7 @@ class Skin:
             self.p = type(self.p)(**{**self.p.__dict__, "bg": (0, 0, 0), "bg2": (0, 0, 0),
                                      "text": (255, 255, 255), "muted": (220, 220, 220)})
         self._index: NoteIndex | None = None
+        self._backing_index: NoteIndex | None = None
         self._range_cache: tuple[int, tuple[int, int]] | None = None
 
     # ------------------------------------------------------------ settings-derived
@@ -95,6 +96,39 @@ class Skin:
         if self._index is None or self._index.song is not song:
             self._index = NoteIndex(song)
         return self._index
+
+    def backing_window(self, song: Song, t0: float, t1: float, layout: KeyLayout):
+        """Pitched backing notes (no drums) overlapping [t0, t1] that fit the keyboard."""
+        if not song.backing:
+            return []
+        idx = self._backing_index
+        if idx is None or idx.notes is not song.backing:
+            idx = self._backing_index = NoteIndex(song, song.backing)
+        drums = {t for t, prog in song.backing_programs.items() if prog == PERCUSSION}
+        return [n for n in idx.window(t0, t1) if n.track not in drums and layout.contains(n.pitch)]
+
+    def draw_backing(self, surface: pygame.Surface, frame: PlayFrame, layout: KeyLayout,
+                     area: pygame.Rect, look_ahead: float, color: Color, fill_alpha: int = 26,
+                     edge_alpha: int = 90, clip: pygame.Rect | None = None) -> None:
+        """Faint outlined "ghost" bars for accompaniment: heard, never played.
+
+        ``area`` is the falling-note field (its bottom is the hit line and its
+        height spans ``look_ahead`` seconds); ``clip`` limits drawing if smaller.
+        """
+        pps = area.h / look_ahead
+        clip = clip or area
+        for n in self.backing_window(frame.song, frame.position - 0.05,
+                                     frame.position + look_ahead, layout):
+            x, lw = layout.lane(n.pitch)
+            inset = lw * 0.2
+            y0 = area.bottom - (n.start_time + n.duration - frame.position) * pps
+            y1 = area.bottom - (n.start_time - frame.position) * pps
+            r = pygame.Rect(int(x + inset), int(y0), max(2, int(lw - 2 * inset)),
+                            int(y1 - y0)).clip(clip)
+            if r.h <= 0:
+                continue
+            rrect(surface, color, r, 4, alpha=fill_alpha)
+            rrect(surface, color, r, 4, alpha=edge_alpha, width=1)
 
     def song_range(self, song: Song) -> tuple[int, int]:
         if self._range_cache is None or self._range_cache[0] != id(song):
@@ -183,10 +217,12 @@ class Skin:
         text(surface, self.ui(400, 15), "Changes apply instantly and are saved automatically.",
              p.muted, (60, 86))
 
-        y = 130
+        y = 124
+        compact = len(frame.rows) > 6
         for i, row in enumerate(frame.rows):
-            r = self._draw_row(surface, row, i == frame.selected, 48, y, 560)
-            y = r.bottom + 10
+            r = self._draw_row(surface, row, i == frame.selected, 48, y, 560,
+                               58 if compact else 68)
+            y = r.bottom + (6 if compact else 10)
 
         # Live preview of the selected theme
         pv = pygame.Rect(650, 130, w - 650 - 48, 0)
@@ -250,7 +286,9 @@ class Skin:
 
     def _draw_roll(self, surface: pygame.Surface, song: Song, rect: pygame.Rect) -> None:
         """Tiny piano roll of the whole song: time across, pitch up."""
-        notes = song.notes + song.backing
+        drums = {t for t, prog in song.backing_programs.items() if prog == PERCUSSION}
+        backing = [n for n in song.backing if n.track not in drums]
+        notes = song.notes + backing
         if not notes or song.duration <= 0:
             text(surface, self.ui(500, 14), "No notes to play", self.p.faint, rect.center,
                  "center")
@@ -260,7 +298,7 @@ class Skin:
         sx = rect.w / song.duration
         sy = rect.h / max(1, hi - lo)
         backing_col = mix(self.p.muted, self.p.panel, 0.45)
-        for group, is_backing in ((song.backing, True), (song.notes, False)):
+        for group, is_backing in ((backing, True), (song.notes, False)):
             for n in group:
                 color = backing_col if is_backing else self.hand_color(n.hand)
                 x = rect.x + n.start_time * sx
