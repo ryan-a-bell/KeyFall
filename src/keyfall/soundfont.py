@@ -150,7 +150,7 @@ GM_DOWNLOAD = SoundFontDownload(
 DOWNLOADS = {d.key: d for d in (PIANO_DOWNLOAD, GM_DOWNLOAD)}
 
 
-class DownloadCancelled(Exception):
+class DownloadCancelledError(Exception):
     pass
 
 
@@ -185,7 +185,7 @@ def download(
                 digest.update(chunk)
                 done += len(chunk)
                 if progress is not None and progress(done, total) is False:
-                    raise DownloadCancelled(spec.label)
+                    raise DownloadCancelledError(spec.label)
         if spec.sha256 and digest.hexdigest() != spec.sha256:
             raise RuntimeError(f"Checksum mismatch for {spec.label}; the download was discarded")
 

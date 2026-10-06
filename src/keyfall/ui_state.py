@@ -10,13 +10,13 @@ from dataclasses import dataclass, field
 
 from keyfall.accessibility import AccessibilitySettings, save_settings
 from keyfall.renderer.skins import Skin, create_skin
-from keyfall.soundfont import SoundFontDownloader
 from keyfall.settings import (
     AppearanceSettings,
     DeviceSettings,
     save_appearance,
     save_devices,
 )
+from keyfall.soundfont import SoundFontDownloader
 
 
 @dataclass

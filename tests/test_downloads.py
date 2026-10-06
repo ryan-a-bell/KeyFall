@@ -13,7 +13,7 @@ from keyfall import accessibility, settings, soundfont
 from keyfall.soundfont import (
     GM_DOWNLOAD,
     PIANO_DOWNLOAD,
-    DownloadCancelled,
+    DownloadCancelledError,
     SoundFontDownloader,
     download,
     installed_path,
@@ -60,7 +60,7 @@ def test_checksum_mismatch_leaves_nothing_behind(tmp_path):
 
 def test_cancel_leaves_nothing_behind(tmp_path):
     dest = tmp_path / "fonts"
-    with pytest.raises(DownloadCancelled):
+    with pytest.raises(DownloadCancelledError):
         download(_file_spec(tmp_path), dest, progress=lambda d, t: False)
     assert list(dest.iterdir()) == []
 
