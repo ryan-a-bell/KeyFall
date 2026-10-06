@@ -21,8 +21,8 @@ from keyfall.playback import (
 from keyfall.renderer.skins.frames import PlayFrame, SessionResult
 from keyfall.views.base import (
     ViewAction,
-    appearance,
     ViewContext,
+    appearance,
     best_accuracy,
     metronome_mode,
     mic_active,
@@ -235,7 +235,8 @@ class WaterfallView:
             judgement=self._judgement,
             judgement_age=self._clock - self._judgement_at,
             timing_offsets_ms=self._offsets,
-            hints="Space: pause | W: wait | N: sheet music | +/-: tempo | 1/2/3: hands | R: restart",
+            hints=("Space: pause | W: wait | N: sheet music | +/-: tempo | 1/2/3: hands"
+                   " | R: restart"),
             clock=self._clock,
             rising=appearance(ctx).layout == "rising",
             count_in=(math.ceil(-engine.position / beat_length(engine.song) - 1e-6)

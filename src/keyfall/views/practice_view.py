@@ -22,8 +22,8 @@ from keyfall.playback import (
 from keyfall.renderer.skins.frames import PlayFrame, SessionResult
 from keyfall.views.base import (
     ViewAction,
-    appearance,
     ViewContext,
+    appearance,
     best_accuracy,
     metronome_mode,
     mic_active,
