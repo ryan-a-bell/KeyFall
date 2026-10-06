@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
 import pygame
@@ -11,9 +11,11 @@ from keyfall.models import Hand, Song
 
 if TYPE_CHECKING:
     from keyfall.audio import AudioEngine
-    from keyfall.midi_input import KeyboardInput, MidiInput
+    from keyfall.midi_input import KeyboardInput, MidiInput, MidiInputHub
     from keyfall.plugins.manager import PluginManager
     from keyfall.progress import ProgressTracker
+    from keyfall.renderer.skins import Skin
+    from keyfall.ui_state import UIState
 
 
 @dataclass
@@ -21,7 +23,7 @@ class ViewContext:
     """Shared state passed to views on entry."""
 
     screen_size: tuple[int, int]
-    midi_input: MidiInput | None
+    midi_input: MidiInputHub | MidiInput | None
     audio: AudioEngine | None
     progress: ProgressTracker | None
     plugin_manager: PluginManager | None = None
@@ -31,6 +33,21 @@ class ViewContext:
     hand: Hand = Hand.BOTH
     tempo_scale: float = 1.0
     songs_dir: str = ""
+    audio_status: str = ""
+    midi_output: Any = None  # MidiOutputHub: sound/lights sent to the keyboard
+    mic_input: Any = None  # MicInputHub: acoustic piano through a microphone
+    results: Any = None  # SessionResult for the results screen (or a CoachPass)
+    coach_step: Any = None  # CoachStep: Practice runs one coach step then returns
+    stem_folder: str = ""  # multi-stem song folder for the Stems screen
+    next_view: str = ""  # where the Stems screen goes when you press Start
+    ui: UIState | None = None  # shared by reference across context copies
+
+    @property
+    def skin(self) -> Skin:
+        if self.ui is None:
+            from keyfall.ui_state import UIState
+            self.ui = UIState(persist=False)
+        return self.ui.skin
 
 
 @dataclass
@@ -149,6 +166,14 @@ class ViewManager:
             hand=self._context.hand,
             tempo_scale=self._context.tempo_scale,
             songs_dir=self._context.songs_dir,
+            audio_status=self._context.audio_status,
+            midi_output=self._context.midi_output,
+            mic_input=self._context.mic_input,
+            results=self._context.results,
+            coach_step=self._context.coach_step,
+            stem_folder=self._context.stem_folder,
+            next_view=self._context.next_view,
+            ui=self._context.ui,
         )
         for key, val in overrides.items():
             if hasattr(ctx, key):
@@ -180,3 +205,96 @@ def layout_regions(
 
     regions["center"] = remaining
     return regions
+
+
+def update_outputs(ctx: ViewContext | None, outputs, engine, newly_active):
+    """Route the auto-played hand, backing tracks and key lights for a gameplay view.
+
+    Returns the (possibly new) SongOutputs to keep for the next frame.
+    """
+    from keyfall.playback import SongOutputs
+    if ctx is None:
+        return outputs
+    if outputs is None or outputs.song is not engine.song:
+        if outputs is not None:
+            stop_outputs(ctx, outputs)
+        outputs = SongOutputs(engine.song)
+    mode, channel = _output_prefs(ctx)
+    outputs.update(engine, newly_active, ctx.audio, ctx.midi_output, mode, channel)
+    return outputs
+
+
+def stop_outputs(ctx: ViewContext | None, outputs) -> None:
+    if ctx is None or outputs is None:
+        return
+    _mode, channel = _output_prefs(ctx)
+    out = ctx.midi_output if getattr(ctx.midi_output, "connected", False) else None
+    outputs.stop(ctx.audio, out, channel)
+
+
+def _output_prefs(ctx: ViewContext) -> tuple[str, int]:
+    devices = ctx.ui.devices if ctx.ui is not None else None
+    if devices is None:
+        return "accompaniment", 0
+    return devices.output_mode, max(0, min(15, devices.light_channel - 1))
+
+
+def metronome_mode(ctx: ViewContext | None) -> str:
+    if ctx is None or ctx.ui is None:
+        return "count-in"
+    return ctx.ui.practice.metronome
+
+
+def best_accuracy(ctx: ViewContext | None, title: str) -> float | None:
+    if ctx is None or ctx.progress is None:
+        return None
+    try:
+        row = ctx.progress.get_best(title)
+    except Exception:
+        return None
+    return row["accuracy_pct"] if row else None
+
+
+def mic_active(ctx: ViewContext | None) -> bool:
+    return bool(ctx is not None and getattr(ctx.mic_input, "connected", False))
+
+
+def poll_inputs(ctx: ViewContext | None, pressed: set[int], press_pos: dict[int, float],
+                position: float, expected: set[int] | None = None) -> None:
+    """Read every input source (MIDI, computer keys, microphone).
+
+    ``press_pos`` records the song position each note was really struck at,
+    corrected for the source's latency (the microphone hears notes ~60 ms late).
+    Notes from sources with ``echo = False`` (the microphone: an acoustic piano
+    makes its own sound) are not played through the synth.
+    """
+    if ctx is None:
+        return
+    if mic_active(ctx):
+        ctx.mic_input.set_expected(expected)
+    for source in (ctx.midi_input, ctx.keyboard_input, ctx.mic_input):
+        if source is None or (source is ctx.mic_input and not source.connected):
+            continue
+        echo = getattr(source, "echo", True)
+        latency = getattr(source, "latency_s", 0.0)
+        while True:
+            evt = source.poll()
+            if evt is None:
+                break
+            if evt.is_note_on:
+                pressed.add(evt.pitch)
+                press_pos[evt.pitch] = position - latency
+                if echo and ctx.audio:
+                    ctx.audio.note_on(evt.pitch, evt.velocity)
+            else:
+                pressed.discard(evt.pitch)
+                if echo and ctx.audio:
+                    ctx.audio.note_off(evt.pitch)
+
+
+def appearance(ctx: ViewContext | None):
+    """The appearance settings (layout, sheet music, theme), or defaults."""
+    from keyfall.settings import AppearanceSettings
+    if ctx is None or ctx.ui is None:
+        return AppearanceSettings()
+    return ctx.ui.appearance

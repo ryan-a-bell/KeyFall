@@ -2,17 +2,35 @@
 
 from __future__ import annotations
 
+import math
+from collections import Counter
+
 import pygame
 
+from keyfall.accessibility import NoteLabelMode
 from keyfall.evaluator import evaluate_hit
-from keyfall.models import Hand, HitGrade, NoteEvent, SessionStats, Song
-from keyfall.notation import render_notation
-from keyfall.playback import PlaybackEngine, select_section
-from keyfall.renderer import colors as colors_mod
-from keyfall.renderer.hud import render_hud
-from keyfall.renderer.keyboard import render_keyboard
-from keyfall.renderer.waterfall import render_waterfall
-from keyfall.views.base import ViewAction, ViewContext, layout_regions
+from keyfall.models import Hand, HitGrade, HitResult, NoteEvent, SessionStats, Song
+from keyfall.playback import (
+    ClickTrack,
+    PlaybackEngine,
+    SongOutputs,
+    bar_of,
+    beat_length,
+    count_in_seconds,
+    select_section,
+)
+from keyfall.renderer.skins.frames import PlayFrame, SessionResult
+from keyfall.views.base import (
+    ViewAction,
+    ViewContext,
+    appearance,
+    best_accuracy,
+    metronome_mode,
+    mic_active,
+    poll_inputs,
+    stop_outputs,
+    update_outputs,
+)
 
 
 class PracticeView:
@@ -27,7 +45,16 @@ class PracticeView:
         self._pressed: set[int] = set()
         self._streak: int = 0
         self._pending_notes: list[NoteEvent] = []
-        self._font: pygame.font.Font | None = None
+        self._clock: float = 0.0
+        self._judgement: HitGrade | None = None
+        self._judgement_at: float = -99.0
+        self._offsets: list[float] = []
+        self._outputs: SongOutputs | None = None
+        self._click = ClickTrack()
+        self._press_pos: dict[int, float] = {}
+        self._coach = None  # CoachStep when run from the Coach screen
+        self._hits: list = []  # HitResults for technique feedback
+        self._miss_bars: Counter[int] = Counter()
         self._show_notation: bool = True
         self._looping: bool = False
         self._section_start: int = 1
@@ -37,17 +64,27 @@ class PracticeView:
 
     def on_enter(self, context: ViewContext) -> None:
         self._context = context
-        self._font = pygame.font.SysFont("monospace", 18)
         self._full_song = context.song or Song(title="Empty")
         self._stats = SessionStats(song_title=self._full_song.title)
         self._streak = 0
         self._pressed = set()
         self._pending_notes = []
+        self._clock = 0.0
+        self._judgement = None
+        self._offsets = []
+        self._miss_bars = Counter()
         self._hit_results = {}
         self._loop_count = 0
 
-        if context.section:
+        self._coach = context.coach_step
+        self._hits = []
+        self._show_notation = appearance(context).notation != "off"
+        if self._coach is not None:
+            self._section_start, self._section_end = self._coach.first_bar, self._coach.last_bar
+            self._looping = False
+        elif context.section:  # e.g. "Practice bars 5-6" from the results screen
             self._section_start, self._section_end = context.section
+            self._looping = True
 
         self._build_engine()
 
@@ -55,15 +92,23 @@ class PracticeView:
         song = self._full_song
         if song is None:
             return
-        if self._looping:
+        coach = self._coach
+        if self._looping or (coach is not None and coach.rung != "full"):
             song = select_section(song, self._section_start, self._section_end)
         self._engine = PlaybackEngine(song)
         if self._context:
             self._engine.set_tempo_scale(self._context.tempo_scale)
             self._engine.active_hand = self._context.hand
         self._engine.wait_mode = True  # default for practice
+        if coach is not None:
+            self._engine.wait_mode = coach.wait_mode
+            self._engine.set_tempo_scale(coach.tempo_pct / 100)
+            self._engine.active_hand = coach.hand
+        self._start_position()
 
     def on_exit(self) -> None:
+        stop_outputs(self._context, self._outputs)
+        self._outputs = None
         if self._context and self._context.audio:
             self._context.audio.all_notes_off()
         if self._context and self._context.progress:
@@ -79,6 +124,8 @@ class PracticeView:
             return None
 
         if event.key == pygame.K_ESCAPE:
+            if self._coach is not None:  # back to the Coach screen, no verdict
+                return self._coach_action(completed=False)
             return ViewAction(kind="pop")
         elif event.key == pygame.K_SPACE:
             engine.paused = not engine.paused
@@ -118,33 +165,23 @@ class PracticeView:
         engine = self._engine
         if engine is None:
             return None
+        self._clock += dt
 
-        # Poll MIDI and keyboard input
-        if self._context:
-            for source in (self._context.midi_input, self._context.keyboard_input):
-                if source is None:
-                    continue
-                while True:
-                    evt = source.poll()
-                    if evt is None:
-                        break
-                    if evt.is_note_on:
-                        self._pressed.add(evt.pitch)
-                        if self._context.audio:
-                            self._context.audio.note_on(evt.pitch, evt.velocity)
-                    else:
-                        self._pressed.discard(evt.pitch)
-                        if self._context.audio:
-                            self._context.audio.note_off(evt.pitch)
+        # MIDI keyboard, computer keys, microphone
+        engine.required_fraction = 0.6 if mic_active(self._context) else 1.0
+        poll_inputs(self._context, self._pressed, self._press_pos, engine.position,
+                    engine.expected_pitches())
 
         newly_active = engine.update(dt, self._pressed)
+        # auto-played hand, backing tracks, key lights (synth and/or keyboard)
+        self._outputs = update_outputs(self._context, self._outputs, engine, newly_active)
+        clicks = self._click.update(engine.position, beat_length(engine.song),
+                                    metronome_mode(self._context))
+        self._click.play(self._context.audio if self._context else None, clicks)
 
         for note in newly_active:
-            self._pending_notes.append(note)
-            # Auto-play inactive hand
-            if self._context and self._context.audio:
-                if engine.active_hand != Hand.BOTH and note.hand != engine.active_hand:
-                    self._context.audio.play_note_event(note)
+            if engine.active_hand == Hand.BOTH or note.hand == engine.active_hand:
+                self._pending_notes.append(note)
 
         still_pending: list[NoteEvent] = []
         for note in self._pending_notes:
@@ -152,8 +189,13 @@ class PracticeView:
             if age > 0.3:
                 self._stats.missed += 1
                 self._streak = 0
+                self._judge(HitGrade.MISS, note=note)
+                self._hits.append(HitResult(note, None, HitGrade.MISS, 0.0))
             elif note.pitch in self._pressed:
-                result = evaluate_hit(note, note.pitch, engine.position)
+                result = evaluate_hit(note, note.pitch,
+                                      self._press_pos.get(note.pitch, engine.position))
+                self._judge(result.grade, result.timing_offset_ms, note)
+                self._hits.append(result)
                 if result.grade == HitGrade.PERFECT:
                     self._stats.perfect += 1
                     self._streak += 1
@@ -178,10 +220,57 @@ class PracticeView:
             if self._looping:
                 self._loop_count += 1
                 self._build_engine()
+            elif self._coach is not None:
+                return self._coach_action(completed=True)
             else:
-                return ViewAction(kind="pop")
+                return self._results()
 
         return None
+
+    def _judge(self, grade: HitGrade, offset_ms: float | None = None,
+               note: NoteEvent | None = None) -> None:
+        self._judgement = grade
+        self._judgement_at = self._clock
+        if grade == HitGrade.MISS and note is not None and self._engine is not None:
+            self._miss_bars[bar_of(note.start_time, self._engine.song, self._first_bar())] += 1
+        if offset_ms is not None:
+            self._offsets.append(offset_ms)
+            del self._offsets[:-300]
+
+    def _coach_action(self, completed: bool) -> ViewAction:
+        from keyfall.coach import CoachPass
+        self._update_accuracy()
+        result = CoachPass(self._coach, self._stats.accuracy_pct, self._clock, list(self._hits),
+                           completed=completed and self._stats.total_notes > 0)
+        return ViewAction(kind="switch", target="coach",
+                          context_patch={"results": result, "song": self._full_song,
+                                         "coach_step": None})
+
+    def _coach_label(self) -> str:
+        return f"Coach · {self._coach.label}" if self._coach is not None else ""
+
+    def _first_bar(self) -> int:
+        return self._section_start if self._looping else 1
+
+    def _start_position(self) -> None:
+        """Rewind to one bar before the song so the count-in clicks lead into it."""
+        engine = self._engine
+        engine.position = -count_in_seconds(engine.song, metronome_mode(self._context))
+        engine.note_index = 0
+        self._click.reset()
+
+    def _results(self) -> ViewAction:
+        self._update_accuracy()
+        title = self._stats.song_title
+        result = SessionResult(
+            title=title, mode="Practice",
+            stats=self._stats, timing_offsets_ms=list(self._offsets),
+            best_before=best_accuracy(self._context, title), miss_bars=dict(self._miss_bars),
+        )
+        song = self._full_song if hasattr(self, "_full_song") else self._engine.song
+        return ViewAction(kind="switch", target="results",
+                          context_patch={"results": result, "song": song,
+                                         "next_view": "practice"})
 
     def _update_accuracy(self) -> None:
         hit = self._stats.perfect + self._stats.good + self._stats.ok
@@ -191,57 +280,34 @@ class PracticeView:
 
     def draw(self, surface: pygame.Surface) -> None:
         engine = self._engine
-        if engine is None:
+        if engine is None or self._context is None:
             return
-
-        surface.fill(colors_mod.BG)
-        w, h = surface.get_size()
-
-        regions = layout_regions(
-            pygame.Rect(0, 0, w, h),
-            [
-                ("hud", "top", 44),
-                ("keyboard", "bottom", 120),
-            ] + ([("notation", "top", 180)] if self._show_notation else []),
-        )
-
-        # Notation panel
-        if self._show_notation:
-            nr = regions["notation"]
-            render_notation(
-                surface, engine.song, engine.position,
-                x=nr.x, y=nr.y, width=nr.w, height=nr.h,
-                hit_results=self._hit_results,
-            )
-
-        # Waterfall in center region
-        render_waterfall(surface, engine.song, engine.position)
-
-        # Keyboard
-        render_keyboard(surface, self._pressed)
-
-        # HUD
-        render_hud(surface, self._stats)
-
-        # Status info
-        if self._font:
-            info_parts = [
-                f"Tempo: {engine.tempo_scale:.0%}",
-                f"{'WAIT' if engine.wait_mode else 'PLAY'}",
-                f"Hand: {engine.active_hand.name}",
-            ]
-            if self._looping:
-                info_parts.append(f"Loop: bars {self._section_start}-{self._section_end} (#{self._loop_count})")
-            if engine.paused:
-                info_parts.append("PAUSED")
-            info_text = " | ".join(info_parts)
-            rendered = self._font.render(info_text, True, colors_mod.HUD_TEXT)
-            surface.blit(rendered, (w - rendered.get_width() - 10, 10))
-
-        # Controls hint
-        if self._font:
-            hint = self._font.render(
-                "N:notation L:loop [/]:section W:wait +/-:tempo 1/2/3:hand R:restart",
-                True, (80, 80, 100),
-            )
-            surface.blit(hint, (10, h - 25))
+        ctx = self._context
+        self._context.skin.draw_play(surface, PlayFrame(
+            song=engine.song,
+            position=engine.position,
+            pressed=self._pressed,
+            stats=self._stats,
+            streak=self._streak,
+            tempo_scale=engine.tempo_scale,
+            wait_mode=engine.wait_mode,
+            paused=engine.paused,
+            active_hand=engine.active_hand,
+            mode="Practice",
+            label_mode=ctx.ui.accessibility.get_label_mode() if ctx.ui else NoteLabelMode.NONE,
+            judgement=self._judgement,
+            judgement_age=self._clock - self._judgement_at,
+            timing_offsets_ms=self._offsets,
+            loop=(self._section_start, self._section_end) if self._looping else None,
+            loop_count=self._loop_count,
+            show_notation=self._show_notation,
+            hit_results=self._hit_results,
+            hints="N:notation L:loop [/]:section W:wait +/-:tempo 1/2/3:hand R:restart",
+            clock=self._clock,
+            sheet_below=appearance(ctx).layout == "below",
+            count_in=(math.ceil(-engine.position / beat_length(engine.song) - 1e-6)
+                      if engine.position < 0 else None),
+            metronome=metronome_mode(ctx),
+            mic_level=ctx.mic_input.level if mic_active(ctx) else None,
+            coach=self._coach_label() if hasattr(self, "_coach_label") else "",
+        ))

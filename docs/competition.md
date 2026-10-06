@@ -85,8 +85,22 @@ Analysis of piano learning apps and open-source alternatives, focused on how Key
 | [Neothesia](https://github.com/PolyMeilex/Neothesia) | Modern Rust-based falling-note MIDI player with polished visuals | Actively maintained — strongest OSS competitor |
 | [Linthesia](https://github.com/allan-simon/linthesia) | Fork of pre-0.6.1 open-source Synthesia. Falling-note MIDI player | Largely unmaintained |
 | PianoBooster | Scrolling music stave with MIDI keyboard input. Most popular Linux option | Maintained |
-| Sightread | Web-based sight-reading trainer | Active |
+| [Sightread](https://sightread.dev) | Browser-based falling-notes + "Sheet Hero" trainer (TypeScript, GPL-3.0). See detailed entry below | Public repo frozen March 2026; development continues privately |
 | Midiano | Web app that plays any MIDI file with interactive piano display | Active |
+
+
+### Sightread (sightread.dev)
+
+| | |
+|---|---|
+| **Audio approach** | In-browser SoundFont synth with selectable instruments; can also send notes out to a MIDI keyboard |
+| **Key features** | Falling notes and "Sheet Hero" (beta, falling notes on a staff) with note labels; Web MIDI input and output plus computer-keyboard fallback; wait mode; per-hand show/play settings; speed control; section looping; metronome; key-signature display; free play; small training games (speed, phrases); ~80 bundled public-domain songs; upload your own MIDI files (kept in browser storage) |
+| **Pricing** | Free |
+| **Platforms** | Web — Chrome and Firefox. No iOS (Web MIDI unavailable in WebKit); iOS app on roadmap |
+| **License** | GPL-3.0. As of March 4, 2026 the public repo is a frozen snapshot (PRs disabled); new work happens in a private repo, with a stated plan to re-open "as much as possible" in 2027 |
+| **Limitations** | Its own roadmap lists MusicXML upload, full sheet music, progress tracking/scoring, difficulty scaling, and recording/sharing as not yet shipped; no microphone input; no pedagogy or technique feedback; browser-only, so audio latency depends on Web Audio; GPL limits embedding in proprietary products |
+
+**Takeaway for KeyFall:** Sightread is the closest open-source analogue and is ahead on polish (MIDI output, device picker, bundled library, zero-install web delivery). KeyFall's openings are the things on Sightread's roadmap that KeyFall already has — MusicXML, scoring and progress history, difficulty estimation — plus a permissive license and an open, accepting development model now that Sightread has gone private.
 
 ---
 
@@ -101,6 +115,7 @@ Analysis of piano learning apps and open-source alternatives, focused on how Key
 | Skoove | AI mic + MIDI | ~$120/yr | Basic-Moderate | Yes (mic) |
 | Piano Marvel | MIDI only | ~$120/yr | Deep (exam prep) | Partial |
 | Yousician | Mic + MIDI | ~$120/yr | Basic | Yes (mic) |
+| Sightread | Web MIDI in/out + browser synth | Free (GPL-3.0, now privately developed) | None | No |
 
 ---
 
@@ -151,3 +166,36 @@ Analysis of piano learning apps and open-source alternatives, focused on how Key
 17. **Audio-based assessment** — Use polyphonic pitch detection to evaluate playing from a microphone, removing the MIDI keyboard requirement entirely. Simply Piano and Flowkey offer basic mic recognition but it's widely reported as unreliable. A modern detection model can do onset, pitch, and velocity estimation accurately enough to grade acoustic piano playing.
 
 18. **Sight-reading difficulty estimation** — Automatically score any imported MIDI/MusicXML file on a 1-18 difficulty scale by analyzing note density, hand independence, interval complexity, rhythmic patterns, tempo, and key signatures. No app auto-rates arbitrary files — Piano Marvel has curated ratings only for its own library.
+
+---
+
+## AI-Generated Music as a Content Source (Suno Studio)
+
+Suno Studio 2.0 (August 2026, Premier tier) can split a generated song into stems — **Auto Split** (~12 common instruments) or **Advanced Split** (search ~100 instruments and pull out one) — and export any instrumental stem as **MIDI** ("Get MIDI", 10 credits per stem). Vocals cannot be exported as MIDI.
+
+This makes "generate a song, then learn to play it" a realistic workflow, and none of the commercial apps above support it:
+
+```mermaid
+flowchart LR
+    A[Suno song] --> B[Studio: Advanced Split]
+    B --> C[Piano / keys stem]
+    B --> D[Bass stem]
+    B --> E[Lead melody stem]
+    C --> F[Get MIDI]
+    D --> F
+    E --> F
+    F --> G[".mid files"]
+    G --> H[KeyFall loader]
+    H --> I[Waterfall / Practice]
+```
+
+What KeyFall needs to make this smooth:
+
+1. **Multi-file import** — load several per-instrument `.mid` stems as one song (e.g. piano stem = right hand, bass stem = left hand), aligned on a shared timeline.
+2. **Pitch-based hand split exposed in the UI** — single-stem MIDI from audio has one track, so `BY_TRACK` puts everything in the right hand; `BY_PITCH` is the right default here.
+3. **Cleanup pass** — Suno's MIDI is transcribed from audio, so expect ghost notes, jittery timing, and very short notes. Quantize to a grid, drop notes below a velocity/duration floor, and merge near-duplicate onsets.
+4. **Tempo detection** — transcribed MIDI often carries a default 120 BPM with no tempo map; estimate tempo so the metronome, sections, and bar numbers line up.
+5. **Drum filtering** — ignore channel 10 if a full-mix MIDI is loaded.
+6. **Arrangement simplification** — reuse the difficulty estimator to thin dense parts into a playable piano reduction.
+
+Sightread accepts the same `.mid` files but does none of this cleanup or hand-assignment, and Synthesia's track settings help with hands but not with transcription noise. This is a concrete opening for KeyFall.

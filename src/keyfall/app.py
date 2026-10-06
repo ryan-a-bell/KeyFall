@@ -4,37 +4,58 @@ from __future__ import annotations
 
 import pygame
 
+from keyfall.accessibility import load_settings
 from keyfall.config import FPS, WINDOW_HEIGHT, WINDOW_TITLE, WINDOW_WIDTH
+from keyfall.library import prepare_songs_dir
 from keyfall.midi_input import KeyboardInput
+from keyfall.settings import load_appearance, load_devices, load_practice
+from keyfall.ui_state import UIState
 from keyfall.views.base import ViewContext, ViewManager
+from keyfall.views.coach_view import CoachView
 from keyfall.views.freeplay_view import FreePlayView
 from keyfall.views.menu_view import MenuView
 from keyfall.views.practice_view import PracticeView
+from keyfall.views.results_view import ResultsView
+from keyfall.views.settings_view import SettingsView
+from keyfall.views.stems_view import StemsView
 from keyfall.views.waterfall_view import WaterfallView
 
 
 class App:
-    def __init__(self, songs_dir: str = "") -> None:
+    def __init__(
+        self, songs_dir: str = "", soundfont: str | None = None, theme: str | None = None,
+    ) -> None:
         pygame.init()
         self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
         pygame.display.set_caption(WINDOW_TITLE)
         self.clock = pygame.time.Clock()
 
         # Build shared context — optional subsystems gracefully degrade
-        midi_input = self._try_midi()
-        audio = self._try_audio()
+        audio, audio_status = self._try_audio(soundfont)
         progress = self._try_progress()
         plugin_manager = self._try_plugins()
         self._keyboard_input = KeyboardInput()
+        ui = self._load_ui(theme)
+        try:
+            songs_dir = str(prepare_songs_dir(songs_dir or None))
+        except OSError:
+            pass  # read-only home etc.: run with whatever folder was given
+        midi_input = self._open_midi(ui.devices.midi_input)
+        midi_output = self._open_midi_output(ui.devices.midi_output)
+        mic_input = self._open_mic(ui.devices.mic_input, ui.devices.mic_sensitivity)
 
         context = ViewContext(
             screen_size=(WINDOW_WIDTH, WINDOW_HEIGHT),
             midi_input=midi_input,
+            midi_output=midi_output,
+            mic_input=mic_input,
             audio=audio,
             progress=progress,
             plugin_manager=plugin_manager,
             keyboard_input=self._keyboard_input,
             songs_dir=songs_dir,
+            audio_status=audio_status,
+            ui=ui,
         )
 
         self.views = ViewManager(context)
@@ -44,6 +65,10 @@ class App:
         self.views.register(WaterfallView)
         self.views.register(PracticeView)
         self.views.register(FreePlayView)
+        self.views.register(SettingsView)
+        self.views.register(StemsView)
+        self.views.register(ResultsView)
+        self.views.register(CoachView)
 
         # Register plugin views
         if plugin_manager:
@@ -76,24 +101,70 @@ class App:
     def _cleanup(self) -> None:
         while self.views.active_view:
             self.views.pop()
+        for device in (self.views._context.midi_output, self.views._context.mic_input):
+            if device is not None:
+                device.close()
 
     @staticmethod
-    def _try_midi():
-        try:
-            from keyfall.midi_input import MidiInput
-            mi = MidiInput()
-            mi.open()
-            return mi
-        except Exception:
-            return None
+    def _open_midi(choice: str):
+        """The shared MIDI input. Always returns a hub, even with no devices."""
+        from keyfall.midi_input import MidiInputHub
+        hub = MidiInputHub(choice=choice)
+        hub.select(choice)
+        return hub
 
     @staticmethod
-    def _try_audio():
+    def _open_mic(choice: str, sensitivity: str):
+        """Microphone for an acoustic piano (off unless chosen in Settings)."""
+        from keyfall.mic_input import MicInputHub
+        hub = MicInputHub(choice=choice, sensitivity=sensitivity)
+        hub.select(choice)
+        return hub
+
+    @staticmethod
+    def _open_midi_output(choice: str):
+        """Where song sound / key lights go on the keyboard (off unless chosen)."""
+        from keyfall.midi_output import MidiOutputHub
+        hub = MidiOutputHub(choice=choice)
+        hub.select(choice)
+        return hub
+
+    @staticmethod
+    def _try_audio(soundfont: str | None = None):
+        """Return (AudioEngine or None, status text for the menu).
+
+        The engine starts even without a SoundFont so one downloaded from
+        Settings can be loaded into it while the game is running.
+        """
         try:
             from keyfall.audio import AudioEngine
-            return AudioEngine()
-        except Exception:
-            return None
+            from keyfall.soundfont import find_gm_soundfont, find_soundfont
+            engine = AudioEngine()
+        except Exception as exc:
+            return None, f"Sound: off ({exc})"
+        path = find_soundfont(soundfont)
+        if path is not None:
+            try:
+                engine.load_soundfont(path)
+            except RuntimeError:
+                path = None
+        gm = find_gm_soundfont(exclude=path)
+        if gm is not None:
+            try:
+                engine.load_gm_soundfont(gm)
+            except RuntimeError:
+                pass
+        return engine, engine.status_text()
+
+    @staticmethod
+    def _load_ui(theme: str | None) -> UIState:
+        """Saved appearance/accessibility settings; ``theme`` overrides for this run only."""
+        appearance = load_appearance()
+        accessibility = load_settings()
+        if theme:
+            appearance.theme = theme
+        return UIState(appearance=appearance, accessibility=accessibility,
+                       devices=load_devices(), practice=load_practice())
 
     @staticmethod
     def _try_progress():
