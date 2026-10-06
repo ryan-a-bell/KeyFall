@@ -1,0 +1,148 @@
+"""Settings screen: theme, visual effects, note labels, and hand colors.
+
+Changes apply immediately (the whole app restyles) and are saved to
+~/.keyfall/settings.json.
+"""
+
+from __future__ import annotations
+
+import pygame
+
+from keyfall.accessibility import ColorPalette, NoteLabelMode
+from keyfall.renderer.skins import create_skin
+from keyfall.renderer.skins.demo import demo_frame, demo_song
+from keyfall.renderer.skins.frames import SettingsFrame, SettingsRow
+from keyfall.renderer.theme import THEME_ORDER, THEMES
+from keyfall.settings import EFFECT_LEVELS
+from keyfall.views.base import ViewAction, ViewContext
+
+_EFFECT_NAMES = {"full": "Full", "reduced": "Reduced", "off": "Off"}
+_LABEL_OPTIONS = [NoteLabelMode.NONE, NoteLabelMode.NOTE_NAME, NoteLabelMode.SOLFEGE,
+                  NoteLabelMode.MIDI_NUMBER]
+_LABEL_NAMES = {
+    NoteLabelMode.NONE: "Off",
+    NoteLabelMode.NOTE_NAME: "Letters (C D E)",
+    NoteLabelMode.SOLFEGE: "Solfège (Do Re Mi)",
+    NoteLabelMode.MIDI_NUMBER: "MIDI numbers",
+}
+_PALETTES = [ColorPalette.DEFAULT, ColorPalette.PROTANOPIA, ColorPalette.TRITANOPIA,
+             ColorPalette.HIGH_CONTRAST, ColorPalette.MONOCHROME]
+_PALETTE_NAMES = {
+    ColorPalette.DEFAULT: "Theme colors",
+    ColorPalette.PROTANOPIA: "Protanopia",
+    ColorPalette.TRITANOPIA: "Tritanopia",
+    ColorPalette.HIGH_CONTRAST: "High contrast",
+    ColorPalette.MONOCHROME: "Monochrome",
+}
+
+ROW_THEME, ROW_EFFECTS, ROW_LABELS, ROW_COLORS, ROW_DONE = range(5)
+
+
+def _cycle(options: list, current, step: int):
+    i = options.index(current) if current in options else 0
+    return options[(i + step) % len(options)]
+
+
+class SettingsView:
+    name = "settings"
+    display_name = "Settings"
+
+    def __init__(self) -> None:
+        self._context: ViewContext | None = None
+        self._selected = ROW_THEME
+        self._preview_key: tuple | None = None
+        self._preview: pygame.Surface | None = None
+        self._song = demo_song()
+        self._message = ""
+
+    def on_enter(self, context: ViewContext) -> None:
+        self._context = context
+        context.skin  # ensure a UIState exists
+
+    def on_exit(self) -> None:
+        pass
+
+    # ------------------------------------------------------------------ input
+    def handle_event(self, event: pygame.event.Event) -> ViewAction | None:
+        if event.type != pygame.KEYDOWN or self._context is None:
+            return None
+        if event.key in (pygame.K_ESCAPE, pygame.K_s):
+            return ViewAction(kind="pop")
+        if event.key == pygame.K_UP:
+            self._selected = (self._selected - 1) % 5
+        elif event.key in (pygame.K_DOWN, pygame.K_TAB):
+            self._selected = (self._selected + 1) % 5
+        elif event.key in (pygame.K_LEFT, pygame.K_RIGHT):
+            self.change(self._selected, -1 if event.key == pygame.K_LEFT else 1)
+        elif event.key == pygame.K_RETURN:
+            if self._selected == ROW_DONE:
+                return ViewAction(kind="pop")
+            self.change(self._selected, 1)
+        return None
+
+    def change(self, row: int, step: int) -> None:
+        ui = self._context.ui if self._context else None
+        if ui is None:
+            return
+        a, acc = ui.appearance, ui.accessibility
+        if row == ROW_THEME:
+            a.theme = _cycle(THEME_ORDER, a.theme, step)
+        elif row == ROW_EFFECTS:
+            a.effects = _cycle(list(EFFECT_LEVELS), a.effects, step)
+        elif row == ROW_LABELS:
+            acc.note_labels = _cycle(_LABEL_OPTIONS, acc.get_label_mode(), step).name
+        elif row == ROW_COLORS:
+            acc.color_palette = _cycle(_PALETTES, acc.get_palette(), step).name
+        else:
+            return
+        try:
+            ui.apply()
+            self._message = "Saved"
+        except OSError as exc:
+            ui.rebuild()
+            self._message = f"Applied, but could not save: {exc}"
+
+    # ------------------------------------------------------------------ frame
+    def update(self, dt: float) -> ViewAction | None:
+        return None
+
+    def _rows(self) -> list[SettingsRow]:
+        ui = self._context.ui
+        a, acc = ui.appearance, ui.accessibility
+        theme = THEMES.get(a.theme, THEMES["studio"])
+        return [
+            SettingsRow("Theme", theme.display_name, "Overall look of menus and gameplay"),
+            SettingsRow("Visual effects", _EFFECT_NAMES[a.effects],
+                        "Glow, light beams and sparks (lower for slower computers)"),
+            SettingsRow("Note labels", _LABEL_NAMES.get(acc.get_label_mode(), "Off"),
+                        "Show note names on the falling notes"),
+            SettingsRow("Hand colors", _PALETTE_NAMES[acc.get_palette()],
+                        "Colorblind-friendly palettes override the theme"),
+            SettingsRow("Done", "", "", adjustable=False),
+        ]
+
+    def _preview_surface(self) -> pygame.Surface:
+        """Render the current settings onto a demo song (cached until settings change)."""
+        ui = self._context.ui
+        key = (ui.appearance.theme, ui.appearance.effects, ui.accessibility.color_palette,
+               ui.accessibility.note_labels)
+        if key != self._preview_key or self._preview is None:
+            skin = create_skin(ui.appearance.theme, ui.appearance.effects, ui.accessibility)
+            surf = pygame.Surface(self._context.screen_size)
+            skin.draw_play(surf, demo_frame(self._song,
+                                            label_mode=ui.accessibility.get_label_mode()))
+            self._preview, self._preview_key = surf, key
+        return self._preview
+
+    def draw(self, surface: pygame.Surface) -> None:
+        if self._context is None:
+            return
+        ui = self._context.ui
+        theme = THEMES.get(ui.appearance.theme, THEMES["studio"])
+        self._context.skin.draw_settings(surface, SettingsFrame(
+            rows=self._rows(),
+            selected=self._selected,
+            preview=self._preview_surface(),
+            theme_description=theme.description,
+            message=self._message,
+        ))

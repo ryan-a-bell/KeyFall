@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
 import pygame
@@ -14,6 +14,8 @@ if TYPE_CHECKING:
     from keyfall.midi_input import KeyboardInput, MidiInput
     from keyfall.plugins.manager import PluginManager
     from keyfall.progress import ProgressTracker
+    from keyfall.renderer.skins import Skin
+    from keyfall.ui_state import UIState
 
 
 @dataclass
@@ -32,6 +34,14 @@ class ViewContext:
     tempo_scale: float = 1.0
     songs_dir: str = ""
     audio_status: str = ""
+    ui: UIState | None = None  # shared by reference across context copies
+
+    @property
+    def skin(self) -> Skin:
+        if self.ui is None:
+            from keyfall.ui_state import UIState
+            self.ui = UIState(persist=False)
+        return self.ui.skin
 
 
 @dataclass
@@ -151,6 +161,7 @@ class ViewManager:
             tempo_scale=self._context.tempo_scale,
             songs_dir=self._context.songs_dir,
             audio_status=self._context.audio_status,
+            ui=self._context.ui,
         )
         for key, val in overrides.items():
             if hasattr(ctx, key):

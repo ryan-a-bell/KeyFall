@@ -4,17 +4,23 @@ from __future__ import annotations
 
 import pygame
 
+from keyfall.accessibility import load_settings
 from keyfall.config import FPS, WINDOW_HEIGHT, WINDOW_TITLE, WINDOW_WIDTH
 from keyfall.midi_input import KeyboardInput
+from keyfall.settings import load_appearance
+from keyfall.ui_state import UIState
 from keyfall.views.base import ViewContext, ViewManager
 from keyfall.views.freeplay_view import FreePlayView
 from keyfall.views.menu_view import MenuView
 from keyfall.views.practice_view import PracticeView
+from keyfall.views.settings_view import SettingsView
 from keyfall.views.waterfall_view import WaterfallView
 
 
 class App:
-    def __init__(self, songs_dir: str = "", soundfont: str | None = None) -> None:
+    def __init__(
+        self, songs_dir: str = "", soundfont: str | None = None, theme: str | None = None,
+    ) -> None:
         pygame.init()
         self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
         pygame.display.set_caption(WINDOW_TITLE)
@@ -26,6 +32,7 @@ class App:
         progress = self._try_progress()
         plugin_manager = self._try_plugins()
         self._keyboard_input = KeyboardInput()
+        ui = self._load_ui(theme)
 
         context = ViewContext(
             screen_size=(WINDOW_WIDTH, WINDOW_HEIGHT),
@@ -36,6 +43,7 @@ class App:
             keyboard_input=self._keyboard_input,
             songs_dir=songs_dir,
             audio_status=audio_status,
+            ui=ui,
         )
 
         self.views = ViewManager(context)
@@ -45,6 +53,7 @@ class App:
         self.views.register(WaterfallView)
         self.views.register(PracticeView)
         self.views.register(FreePlayView)
+        self.views.register(SettingsView)
 
         # Register plugin views
         if plugin_manager:
@@ -100,6 +109,15 @@ class App:
             return AudioEngine(path), f"Sound: {path.name}"
         except Exception as exc:
             return None, f"Sound: off ({exc})"
+
+    @staticmethod
+    def _load_ui(theme: str | None) -> UIState:
+        """Saved appearance/accessibility settings; ``theme`` overrides for this run only."""
+        appearance = load_appearance()
+        accessibility = load_settings()
+        if theme:
+            appearance.theme = theme
+        return UIState(appearance=appearance, accessibility=accessibility)
 
     @staticmethod
     def _try_progress():

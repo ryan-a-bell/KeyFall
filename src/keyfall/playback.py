@@ -74,6 +74,7 @@ class PlaybackEngine:
         self.tempo_scale: float = 1.0
         self.paused: bool = False
         self.active_hand: Hand = Hand.BOTH
+        self.waiting: bool = False  # wait mode is holding for the player
 
     def set_tempo_scale(self, scale: float) -> None:
         """Set tempo scale, clamped to [0.25, 2.0]."""
@@ -87,30 +88,40 @@ class PlaybackEngine:
         newly_active: list[NoteEvent] = []
 
         if self.wait_mode:
-            newly_active = self._advance_wait_mode(pressed_pitches)
+            newly_active = self._advance_wait_mode(dt, pressed_pitches)
         else:
             self.position += dt * self.tempo_scale
             newly_active = self._collect_active_notes()
 
         return newly_active
 
-    def _advance_wait_mode(self, pressed_pitches: set[int]) -> list[NoteEvent]:
-        """In wait mode, only advance when the player plays the correct note(s)."""
-        if self.note_index >= len(self.song.notes):
-            return []
+    def _advance_wait_mode(self, dt: float, pressed_pitches: set[int]) -> list[NoteEvent]:
+        """Scroll normally, but stop at each note until the player presses it.
 
-        upcoming = self._get_simultaneous_notes()
-        required = {
-            n.pitch for n in upcoming
-            if self.active_hand == Hand.BOTH or n.hand == self.active_hand
-        }
-
-        if required and required.issubset(pressed_pitches):
-            self.note_index += len(upcoming)
-            if upcoming:
-                self.position = upcoming[-1].start_time + upcoming[-1].duration
-            return upcoming
-        return []
+        Notes for the inactive hand never block (they are auto-played).
+        """
+        played: list[NoteEvent] = []
+        budget = dt * self.tempo_scale
+        self.waiting = False
+        while self.note_index < len(self.song.notes):
+            group = self._get_simultaneous_notes()
+            start = group[0].start_time
+            if self.position + budget < start:
+                break
+            budget -= max(0.0, start - self.position)
+            self.position = max(self.position, start)
+            required = {
+                n.pitch for n in group
+                if self.active_hand == Hand.BOTH or n.hand == self.active_hand
+            }
+            if not required.issubset(pressed_pitches):
+                self.waiting = True
+                return played
+            self.note_index += len(group)
+            played.extend(group)
+        if not self.waiting:
+            self.position += budget
+        return played
 
     def _collect_active_notes(self) -> list[NoteEvent]:
         active: list[NoteEvent] = []

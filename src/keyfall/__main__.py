@@ -9,6 +9,10 @@ def main() -> None:
     parser.add_argument("--songs-dir", default="", help="Directory containing MIDI/MusicXML files")
     parser.add_argument("--soundfont", default=None, help="Path to a .sf2/.sf3 SoundFont")
     parser.add_argument(
+        "--theme", choices=["classic", "studio", "neon"], default=None,
+        help="Visual theme for this run (overrides the saved setting)",
+    )
+    parser.add_argument(
         "--download-soundfont", action="store_true",
         help="Download the default piano SoundFont (YDP Grand, ~37 MB) and exit",
     )
@@ -25,7 +29,7 @@ def main() -> None:
         return
 
     from keyfall.app import App
-    app = App(songs_dir=args.songs_dir, soundfont=args.soundfont)
+    app = App(songs_dir=args.songs_dir, soundfont=args.soundfont, theme=args.theme)
     app.run()
 
 

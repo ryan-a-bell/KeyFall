@@ -7,11 +7,8 @@ import time
 import pygame
 
 from keyfall.free_play import FreePlayMode, export_midi
-from keyfall.renderer import colors as colors_mod
-from keyfall.renderer.keyboard import render_keyboard
+from keyfall.renderer.skins.frames import FreePlayFrame
 from keyfall.views.base import ViewAction, ViewContext
-
-_NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
 
 class FreePlayView:
@@ -23,13 +20,9 @@ class FreePlayView:
         self._mode: FreePlayMode | None = None
         self._pressed: set[int] = set()
         self._chord_history: list[str] = []
-        self._font: pygame.font.Font | None = None
-        self._chord_font: pygame.font.Font | None = None
 
     def on_enter(self, context: ViewContext) -> None:
         self._context = context
-        self._font = pygame.font.SysFont("monospace", 20)
-        self._chord_font = pygame.font.SysFont("monospace", 48)
         self._pressed = set()
         self._chord_history = []
         self._mode = FreePlayMode()
@@ -91,41 +84,11 @@ class FreePlayView:
         return None
 
     def draw(self, surface: pygame.Surface) -> None:
-        surface.fill(colors_mod.BG)
-        w, h = surface.get_size()
-
-        # Title bar
-        if self._font:
-            title = self._font.render("Free Play", True, colors_mod.NOTE_PERFECT)
-            surface.blit(title, (20, 15))
-
-            if self._mode and self._mode.is_recording:
-                rec_text = self._font.render("REC", True, (220, 60, 60))
-                surface.blit(rec_text, (w - rec_text.get_width() - 20, 15))
-
-        # Chord display
-        chord = self._mode.get_active_chord() if self._mode else None
-        if chord and self._chord_font:
-            chord_surf = self._chord_font.render(chord, True, colors_mod.NOTE_RIGHT_HAND)
-            surface.blit(chord_surf, (w // 2 - chord_surf.get_width() // 2, 80))
-
-        # Chord history
-        if self._font and self._chord_history:
-            history_text = "  ".join(self._chord_history[-10:])
-            hist_surf = self._font.render(history_text, True, (120, 120, 140))
-            surface.blit(hist_surf, (20, 160))
-
-        # Note names of currently held keys
-        if self._font and self._pressed:
-            names = sorted(self._pressed)
-            note_str = ", ".join(f"{_NOTE_NAMES[p % 12]}{p // 12 - 1}" for p in names)
-            notes_surf = self._font.render(note_str, True, colors_mod.HUD_TEXT)
-            surface.blit(notes_surf, (20, 200))
-
-        # Keyboard
-        render_keyboard(surface, self._pressed)
-
-        # Controls
-        if self._font:
-            hint = self._font.render("R: toggle recording | Esc: back to menu", True, (80, 80, 100))
-            surface.blit(hint, (20, h - 150))
+        if self._context is None:
+            return
+        self._context.skin.draw_freeplay(surface, FreePlayFrame(
+            pressed=self._pressed,
+            chord=self._mode.get_active_chord() if self._mode else None,
+            chord_history=self._chord_history,
+            recording=bool(self._mode and self._mode.is_recording),
+        ))

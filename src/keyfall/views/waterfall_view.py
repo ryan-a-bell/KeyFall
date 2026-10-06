@@ -4,13 +4,11 @@ from __future__ import annotations
 
 import pygame
 
+from keyfall.accessibility import NoteLabelMode
 from keyfall.evaluator import evaluate_hit
 from keyfall.models import Hand, HitGrade, NoteEvent, SessionStats, Song
 from keyfall.playback import PlaybackEngine
-from keyfall.renderer import colors as colors_mod
-from keyfall.renderer.hud import render_hud
-from keyfall.renderer.keyboard import render_keyboard
-from keyfall.renderer.waterfall import render_waterfall
+from keyfall.renderer.skins.frames import PlayFrame
 from keyfall.views.base import ViewAction, ViewContext
 
 
@@ -25,11 +23,13 @@ class WaterfallView:
         self._pressed: set[int] = set()
         self._streak: int = 0
         self._pending_notes: list[NoteEvent] = []
-        self._font: pygame.font.Font | None = None
+        self._clock: float = 0.0
+        self._judgement: HitGrade | None = None
+        self._judgement_at: float = -99.0
+        self._offsets: list[float] = []
 
     def on_enter(self, context: ViewContext) -> None:
         self._context = context
-        self._font = pygame.font.SysFont("monospace", 18)
         song = context.song
         if song is None:
             song = Song(title="Empty")
@@ -40,6 +40,9 @@ class WaterfallView:
         self._streak = 0
         self._pressed = set()
         self._pending_notes = []
+        self._clock = 0.0
+        self._judgement = None
+        self._offsets = []
 
     def on_exit(self) -> None:
         if self._context and self._context.audio:
@@ -84,6 +87,7 @@ class WaterfallView:
         engine = self._engine
         if engine is None:
             return None
+        self._clock += dt
 
         # Poll MIDI and keyboard input
         if self._context:
@@ -108,7 +112,8 @@ class WaterfallView:
 
         # Evaluate hits
         for note in newly_active:
-            self._pending_notes.append(note)
+            if engine.active_hand == Hand.BOTH or note.hand == engine.active_hand:
+                self._pending_notes.append(note)
 
         # Auto-play inactive hand audio
         if self._context and self._context.audio:
@@ -123,8 +128,10 @@ class WaterfallView:
             if age > 0.3:  # missed
                 self._stats.missed += 1
                 self._streak = 0
+                self._judge(HitGrade.MISS)
             elif note.pitch in self._pressed:
                 result = evaluate_hit(note, note.pitch, engine.position)
+                self._judge(result.grade, result.timing_offset_ms)
                 if result.grade == HitGrade.PERFECT:
                     self._stats.perfect += 1
                     self._streak += 1
@@ -149,6 +156,13 @@ class WaterfallView:
 
         return None
 
+    def _judge(self, grade: HitGrade, offset_ms: float | None = None) -> None:
+        self._judgement = grade
+        self._judgement_at = self._clock
+        if offset_ms is not None:
+            self._offsets.append(offset_ms)
+            del self._offsets[:-300]
+
     def _update_accuracy(self) -> None:
         hit = self._stats.perfect + self._stats.good + self._stats.ok
         total = hit + self._stats.missed
@@ -157,25 +171,24 @@ class WaterfallView:
 
     def draw(self, surface: pygame.Surface) -> None:
         engine = self._engine
-        if engine is None:
+        if engine is None or self._context is None:
             return
-
-        surface.fill(colors_mod.BG)
-
-        render_waterfall(surface, engine.song, engine.position)
-        render_keyboard(surface, self._pressed)
-        render_hud(surface, self._stats)
-
-        # Status bar at bottom-right
-        if self._font:
-            w = surface.get_width()
-            info_parts = [
-                f"Tempo: {engine.tempo_scale:.0%}",
-                f"{'WAIT' if engine.wait_mode else 'PLAY'}",
-                f"Hand: {engine.active_hand.name}",
-            ]
-            if engine.paused:
-                info_parts.append("PAUSED")
-            info_text = " | ".join(info_parts)
-            rendered = self._font.render(info_text, True, colors_mod.HUD_TEXT)
-            surface.blit(rendered, (w - rendered.get_width() - 10, 10))
+        ctx = self._context
+        self._context.skin.draw_play(surface, PlayFrame(
+            song=engine.song,
+            position=engine.position,
+            pressed=self._pressed,
+            stats=self._stats,
+            streak=self._streak,
+            tempo_scale=engine.tempo_scale,
+            wait_mode=engine.wait_mode,
+            paused=engine.paused,
+            active_hand=engine.active_hand,
+            mode="Play",
+            label_mode=ctx.ui.accessibility.get_label_mode() if ctx.ui else NoteLabelMode.NONE,
+            judgement=self._judgement,
+            judgement_age=self._clock - self._judgement_at,
+            timing_offsets_ms=self._offsets,
+            hints="Space: pause | W: wait | +/-: tempo | 1/2/3: hands | R: restart | Esc: menu",
+            clock=self._clock,
+        ))

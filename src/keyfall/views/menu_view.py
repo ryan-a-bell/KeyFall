@@ -6,9 +6,12 @@ from pathlib import Path
 
 import pygame
 
-from keyfall.renderer import colors as colors_mod
+from keyfall.renderer.skins.frames import MenuFrame, MenuSong, SongDetails
 from keyfall.song_loader import HandSplitStrategy, load_song
 from keyfall.views.base import ViewAction, ViewContext
+
+_KIND = {".mid": "MIDI", ".midi": "MIDI", ".xml": "MusicXML", ".musicxml": "MusicXML",
+         ".mxl": "MusicXML"}
 
 
 class MenuView:
@@ -18,6 +21,8 @@ class MenuView:
     def __init__(self) -> None:
         self._context: ViewContext | None = None
         self._song_files: list[Path] = []
+        self._songs: list[MenuSong] = []
+        self._details: dict[Path, SongDetails | None] = {}
         self._selected: int = 0
         self._mode: int = 0  # 0=Play, 1=Practice, 2=Free Play
         self._modes = ["Play", "Practice", "Free Play"]
@@ -25,13 +30,10 @@ class MenuView:
         self._hand_splits = list(HandSplitStrategy)
         self._hand_split: int = 0  # AUTO
         self._error: str = ""
-        self._font: pygame.font.Font | None = None
-        self._title_font: pygame.font.Font | None = None
+        self._clock: float = 0.0
 
     def on_enter(self, context: ViewContext) -> None:
         self._context = context
-        self._font = pygame.font.SysFont("monospace", 20)
-        self._title_font = pygame.font.SysFont("monospace", 36)
         self._scan_songs()
 
     def on_exit(self) -> None:
@@ -39,12 +41,43 @@ class MenuView:
 
     def _scan_songs(self) -> None:
         self._song_files = []
-        if not self._context or not self._context.songs_dir:
-            return
-        songs_path = Path(self._context.songs_dir)
-        if songs_path.is_dir():
-            for ext in ("*.mid", "*.midi", "*.musicxml", "*.xml", "*.mxl"):
-                self._song_files.extend(sorted(songs_path.glob(ext)))
+        if self._context and self._context.songs_dir:
+            songs_path = Path(self._context.songs_dir)
+            if songs_path.is_dir():
+                files = [f for f in songs_path.iterdir() if f.suffix.lower() in _KIND]
+                self._song_files = sorted(files, key=lambda f: f.stem.lower())
+        progress = self._context.progress if self._context else None
+        self._songs = []
+        for f in self._song_files:
+            best = None
+            if progress is not None:
+                try:
+                    row = progress.get_best(f.stem)
+                    best = row["accuracy_pct"] if row else None
+                except Exception:
+                    best = None
+            self._songs.append(MenuSong(title=f.stem, kind=_KIND[f.suffix.lower()],
+                                        best_accuracy=best))
+        self._selected = min(self._selected, max(0, len(self._songs) - 1))
+
+    def _selected_details(self) -> SongDetails | None:
+        """Load and analyse the highlighted song once, on demand."""
+        if not self._song_files:
+            return None
+        path = self._song_files[self._selected]
+        if path not in self._details:
+            try:
+                song = load_song(path, self._hand_splits[self._hand_split])
+                from keyfall.ai.difficulty import estimate
+                report = estimate(song)
+                self._details[path] = SongDetails(
+                    duration=song.duration, note_count=len(song.notes),
+                    difficulty_level=report.overall_level,
+                    difficulty_label=report.overall_label,
+                )
+            except Exception:
+                self._details[path] = None
+        return self._details[path]
 
     def handle_event(self, event: pygame.event.Event) -> ViewAction | None:
         if event.type != pygame.KEYDOWN:
@@ -53,14 +86,18 @@ class MenuView:
         if event.key == pygame.K_ESCAPE:
             return ViewAction(kind="quit")
 
-        if event.key == pygame.K_UP:
+        count = len(self._songs)
+        if event.key in (pygame.K_UP, pygame.K_LEFT):
             self._selected = max(0, self._selected - 1)
-        elif event.key == pygame.K_DOWN:
-            self._selected = min(len(self._song_files) - 1, self._selected + 1) if self._song_files else 0
+        elif event.key in (pygame.K_DOWN, pygame.K_RIGHT):
+            self._selected = min(count - 1, self._selected + 1) if count else 0
         elif event.key == pygame.K_TAB:
             self._mode = (self._mode + 1) % len(self._modes)
         elif event.key == pygame.K_h:
             self._hand_split = (self._hand_split + 1) % len(self._hand_splits)
+            self._details.clear()
+        elif event.key == pygame.K_s:
+            return ViewAction(kind="push", target="settings")
         elif event.key == pygame.K_RETURN:
             return self._launch()
 
@@ -70,9 +107,10 @@ class MenuView:
         target = self._mode_targets[self._mode]
 
         if target == "freeplay":
-            return ViewAction(kind="switch", target="freeplay")
+            return ViewAction(kind="push", target="freeplay")
 
         if not self._song_files:
+            self._error = "No songs to play. Start KeyFall with --songs-dir PATH."
             return None
 
         song_path = self._song_files[self._selected]
@@ -83,70 +121,31 @@ class MenuView:
             return None
         self._error = ""
 
-        return ViewAction(
-            kind="switch",
-            target=target,
-            context_patch={"song": song},
-        )
+        # push (not switch) so Esc in the song returns here instead of quitting
+        return ViewAction(kind="push", target=target, context_patch={"song": song})
 
     def update(self, dt: float) -> ViewAction | None:
+        self._clock += dt
         return None
 
     def draw(self, surface: pygame.Surface) -> None:
-        if not self._font or not self._title_font:
+        ctx = self._context
+        if ctx is None:
             return
-
-        surface.fill(colors_mod.BG)
-        w, h = surface.get_size()
-
-        # Title
-        title = self._title_font.render("KeyFall", True, colors_mod.NOTE_PERFECT)
-        surface.blit(title, (w // 2 - title.get_width() // 2, 30))
-
-        # Mode selector
-        mode_text = self._font.render(
-            f"Mode: < {self._modes[self._mode]} >  (Tab to cycle)", True, colors_mod.NOTE_RIGHT_HAND
-        )
-        surface.blit(mode_text, (40, 90))
-
-        split_name = self._hand_splits[self._hand_split].name.replace("_", " ").title()
-        split_text = self._font.render(
-            f"Hands: < {split_name} >  (H to cycle)", True, colors_mod.NOTE_LEFT_HAND
-        )
-        surface.blit(split_text, (520, 90))
-
-        if self._context and self._context.audio_status:
-            ok = not self._context.audio_status.startswith("Sound: off")
-            status = self._font.render(
-                self._context.audio_status, True, colors_mod.NOTE_PERFECT if ok else (180, 80, 80)
-            )
-            surface.blit(status, (40, 120))
-
-        # Song list
-        if self._song_files:
-            header = self._font.render("Songs:", True, colors_mod.HUD_TEXT)
-            surface.blit(header, (40, 160))
-
-            y = 195
-            for i, path in enumerate(self._song_files):
-                prefix = "> " if i == self._selected else "  "
-                color = colors_mod.NOTE_PERFECT if i == self._selected else colors_mod.HUD_TEXT
-                text = self._font.render(f"{prefix}{path.stem}", True, color)
-                surface.blit(text, (40, y))
-                y += 28
-                if y > h - 80:
-                    break
-        else:
-            no_songs = self._font.render("No songs found. Set songs_dir in config.", True, (180, 80, 80))
-            surface.blit(no_songs, (40, 180))
-
-        if self._error:
-            err = self._font.render(self._error, True, (220, 80, 80))
-            surface.blit(err, (40, h - 70))
-
-        # Controls legend
-        legend = self._font.render(
-            "Up/Down: select | Enter: launch | Tab: mode | H: hands | Esc: quit",
-            True, (120, 120, 140),
-        )
-        surface.blit(legend, (40, h - 40))
+        status = ctx.audio_status or "Sound: off"
+        midi_ok = ctx.midi_input is not None
+        ctx.skin.draw_menu(surface, MenuFrame(
+            songs=self._songs,
+            selected=self._selected,
+            modes=self._modes,
+            mode=self._mode,
+            hand_split=self._hand_splits[self._hand_split].name.replace("_", " ").title(),
+            audio_status=status,
+            midi_status="Connected" if midi_ok else "Not found · using computer keys",
+            midi_connected=midi_ok,
+            sound_ok=not status.startswith("Sound: off"),
+            details=self._selected_details(),
+            error=self._error,
+            songs_dir=ctx.songs_dir,
+            clock=self._clock,
+        ))
