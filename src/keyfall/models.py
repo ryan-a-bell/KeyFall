@@ -58,6 +58,8 @@ class Song:
     backing: list[NoteEvent] = field(default_factory=list)
     # GM program per backing track (NoteEvent.track); PERCUSSION = drum kit
     backing_programs: dict[int, int] = field(default_factory=dict)
+    # SHA-256 of the file it was loaded from ("" if unknown); identifies it across devices
+    source_hash: str = ""
 
 
 PERCUSSION = -1  # backing_programs value meaning "GM drum kit on channel 10"
@@ -74,6 +76,7 @@ class HitResult:
 @dataclass
 class SessionStats:
     song_title: str = ""
+    song_hash: str = ""  # Song.source_hash
     total_notes: int = 0
     perfect: int = 0
     good: int = 0

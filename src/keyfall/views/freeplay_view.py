@@ -41,8 +41,8 @@ class FreePlayView:
             if self._mode.is_recording:
                 song = self._mode.stop_recording()
                 if song.notes:
-                    from pathlib import Path
-                    out = Path.home() / ".keyfall" / "recordings" / f"rec_{int(time.time())}.mid"
+                    from keyfall.storage import data_dir
+                    out = data_dir() / "recordings" / f"rec_{int(time.time())}.mid"
                     out.parent.mkdir(parents=True, exist_ok=True)
                     export_midi(song, out)
             else:
